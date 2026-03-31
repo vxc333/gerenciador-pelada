@@ -26,17 +26,30 @@ type MemberRow = Tables<"pelada_members">;
 export async function calculateParticipationStats(userId: string): Promise<ParticipationStats> {
   const now = new Date().toISOString();
 
-  // Buscar todas as peladas onde o usuário foi membro E a pelada já passou
+  // Step 1: Buscar todas as peladas que já passaram
+  const { data: pastPeladasList, error: pastPeladasError } = await supabase
+    .from("peladas")
+    .select("id")
+    .lt("happening_at", now);
+
+  if (pastPeladasError || !pastPeladasList || pastPeladasList.length === 0) {
+    return {
+      totalParticipated: 0,
+      totalConfirmed: 0,
+      totalNoShow: 0,
+      confirmationRate: 0,
+      badges: [],
+    };
+  }
+
+  const pastPeladaIds = pastPeladasList.map((p) => p.id);
+
+  // Step 2: Buscar membros do usuário nessas peladas
   const { data: pastPeladas, error: peladasError } = await supabase
     .from("pelada_members")
-    .select(
-      `
-      *,
-      peladas!inner(id, happening_at, confirmations_open_at, confirmations_close_at)
-    `
-    )
+    .select("*")
     .eq("user_id", userId)
-    .lt("peladas.happening_at", now);
+    .in("pelada_id", pastPeladaIds);
 
   if (peladasError || !pastPeladas) {
     console.error("Error fetching past peladas:", peladasError);
