@@ -632,13 +632,21 @@ const AdminPelada = () => {
                         <Shield className="h-3.5 w-3.5" /> Dono
                       </span>
                     ) : memberIsAdmin ? (
-                      <Button size="sm" variant="outline" onClick={() => revokeDelegatedAdmin(candidate.userId)}>
-                        Remover admin
-                      </Button>
+                      isSuperAdmin ? (
+                        <Button size="sm" variant="outline" onClick={() => revokeDelegatedAdmin(candidate.userId)}>
+                          Remover admin
+                        </Button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-accent/20 px-2 py-0.5 text-xs text-accent">
+                          <Shield className="h-3.5 w-3.5" /> Admin delegado
+                        </span>
+                      )
                     ) : (
-                      <Button size="sm" onClick={() => grantDelegatedAdmin(candidate.userId)}>
-                        Tornar admin
-                      </Button>
+                      isSuperAdmin ? (
+                        <Button size="sm" onClick={() => grantDelegatedAdmin(candidate.userId)}>
+                          Tornar admin
+                        </Button>
+                      ) : null
                     )}
                   </div>
                 </div>

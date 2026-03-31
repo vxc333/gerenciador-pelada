@@ -37,6 +37,7 @@ interface PeladaCard extends PeladaRow {
   my_request_status?: JoinRequestStatus | null;
   is_member?: boolean;
   is_admin?: boolean;
+  pending_requests_count?: number;
 }
 
 interface UserProfile {
@@ -138,8 +139,31 @@ const Index = () => {
 
     const memberPeladaIds = new Set((myMemberships || []).map((row) => row.pelada_id));
     const delegatedAdminPeladaIds = new Set((myAdminRows || []).map((row) => row.pelada_id));
+    const hasSuperAdminRole = !!superAdminRow;
 
-    const myEnriched = await enrichWithCounts(myData || []);
+    const managedPeladaIds = hasSuperAdminRole
+      ? new Set((allData || []).map((pelada) => pelada.id))
+      : new Set([...(myData || []).map((pelada) => pelada.id), ...Array.from(delegatedAdminPeladaIds)]);
+
+    let pendingByPelada = new Map<string, number>();
+    const managedIds = Array.from(managedPeladaIds);
+    if (managedIds.length > 0) {
+      const { data: pendingRequests } = await supabase
+        .from("pelada_join_requests")
+        .select("pelada_id")
+        .eq("status", "pending")
+        .in("pelada_id", managedIds);
+
+      pendingByPelada = (pendingRequests || []).reduce((acc, row) => {
+        acc.set(row.pelada_id, (acc.get(row.pelada_id) || 0) + 1);
+        return acc;
+      }, new Map<string, number>());
+    }
+
+    const myEnriched = (await enrichWithCounts(myData || [])).map((pelada) => ({
+      ...pelada,
+      pending_requests_count: pendingByPelada.get(pelada.id) || 0,
+    }));
 
     if (myEnriched.length > 0) {
       const last = myEnriched[0];
@@ -165,6 +189,7 @@ const Index = () => {
         my_request_status: requestStatus,
         is_member: isMember,
         is_admin: isAdmin,
+        pending_requests_count: pendingByPelada.get(pelada.id) || 0,
       };
     });
 
@@ -181,6 +206,11 @@ const Index = () => {
   if (!user) return <Navigate to="/auth" replace />;
 
   const handleCreate = async () => {
+    if (!isSuperAdmin) {
+      toast.error("Somente admin supremo pode criar peladas");
+      return;
+    }
+
     if (profileRequired) {
       toast.error("Complete e salve seu nome no perfil antes de criar pelada");
       return;
@@ -383,6 +413,11 @@ const Index = () => {
                   admin delegado
                 </span>
               )}
+              {(showAdminActions || p.is_admin) && (p.pending_requests_count || 0) > 0 && (
+                <span className="inline-block rounded-full bg-destructive/20 px-3 py-0.5 text-xs font-medium text-destructive">
+                  {p.pending_requests_count} solicitacao(oes) pendente(s)
+                </span>
+              )}
             </div>
           </div>
 
@@ -541,7 +576,7 @@ const Index = () => {
 
               <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
                 <DialogTrigger asChild>
-                  <Button className="gap-2" disabled={profileRequired}>
+                  <Button className="gap-2" disabled={profileRequired || !isSuperAdmin}>
                     <Plus className="h-4 w-4" />
                     Nova pelada
                   </Button>
@@ -665,7 +700,7 @@ const Index = () => {
                   </div>
 
                   <div className="flex justify-end">
-                    <Button onClick={handleCreate} className="gap-2" disabled={profileRequired}>
+                    <Button onClick={handleCreate} className="gap-2" disabled={profileRequired || !isSuperAdmin}>
                       <Plus className="h-4 w-4" /> Criar
                     </Button>
                   </div>
@@ -676,6 +711,10 @@ const Index = () => {
 
           {profileRequired && (
             <p className="mt-3 text-xs text-destructive">Salve seu nome no perfil para criar pelada e solicitar entrada.</p>
+          )}
+
+          {!isSuperAdmin && (
+            <p className="mt-3 text-xs text-muted-foreground">Somente admin supremo pode criar novas peladas.</p>
           )}
         </div>
 
