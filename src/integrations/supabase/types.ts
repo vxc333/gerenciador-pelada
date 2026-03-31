@@ -14,6 +14,189 @@ export type Database = {
   }
   public: {
     Tables: {
+      pelada_member_guests: {
+        Row: {
+          admin_selected: boolean | null
+          created_at: string
+          guest_name: string
+          id: string
+          pelada_id: string
+          pelada_member_id: string
+        }
+        Insert: {
+          admin_selected?: boolean | null
+          created_at?: string
+          guest_name: string
+          id?: string
+          pelada_id: string
+          pelada_member_id: string
+        }
+        Update: {
+          admin_selected?: boolean | null
+          created_at?: string
+          guest_name?: string
+          id?: string
+          pelada_id?: string
+          pelada_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pelada_member_guests_pelada_id_fkey"
+            columns: ["pelada_id"]
+            isOneToOne: false
+            referencedRelation: "peladas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pelada_member_guests_pelada_member_id_fkey"
+            columns: ["pelada_member_id"]
+            isOneToOne: false
+            referencedRelation: "pelada_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pelada_admins: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          pelada_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          pelada_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          pelada_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pelada_admins_pelada_id_fkey"
+            columns: ["pelada_id"]
+            isOneToOne: false
+            referencedRelation: "peladas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_super_admins: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      pelada_join_requests: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+          pelada_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          id?: string
+          pelada_id: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+          pelada_id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pelada_join_requests_pelada_id_fkey"
+            columns: ["pelada_id"]
+            isOneToOne: false
+            referencedRelation: "peladas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pelada_members: {
+        Row: {
+          admin_selected: boolean | null
+          created_at: string
+          id: string
+          is_waiting: boolean
+          is_goalkeeper: boolean
+          member_avatar_url: string | null
+          member_name: string
+          pelada_id: string
+          priority_score: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_selected?: boolean | null
+          created_at?: string
+          id?: string
+          is_waiting?: boolean
+          is_goalkeeper?: boolean
+          member_avatar_url?: string | null
+          member_name: string
+          pelada_id: string
+          priority_score?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_selected?: boolean | null
+          created_at?: string
+          id?: string
+          is_waiting?: boolean
+          is_goalkeeper?: boolean
+          member_avatar_url?: string | null
+          member_name?: string
+          pelada_id?: string
+          priority_score?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pelada_members_pelada_id_fkey"
+            columns: ["pelada_id"]
+            isOneToOne: false
+            referencedRelation: "peladas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pelada_goalkeepers: {
         Row: {
           created_at: string
@@ -83,9 +266,14 @@ export type Database = {
       }
       peladas: {
         Row: {
+          confirmations_open_at: string
           created_at: string
           date: string
+          draw_done_at: string | null
+          draw_result: Json | null
+          guest_priority_mode: string
           id: string
+          list_priority_mode: string
           location: string
           max_goalkeepers: number
           max_players: number
@@ -96,9 +284,14 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          confirmations_open_at?: string
           created_at?: string
           date: string
+          draw_done_at?: string | null
+          draw_result?: Json | null
+          guest_priority_mode?: string
           id?: string
+          list_priority_mode?: string
           location?: string
           max_goalkeepers?: number
           max_players?: number
@@ -109,9 +302,14 @@ export type Database = {
           user_id: string
         }
         Update: {
+          confirmations_open_at?: string
           created_at?: string
           date?: string
+          draw_done_at?: string | null
+          draw_result?: Json | null
+          guest_priority_mode?: string
           id?: string
+          list_priority_mode?: string
           location?: string
           max_goalkeepers?: number
           max_players?: number
@@ -119,6 +317,68 @@ export type Database = {
           players_per_team?: number
           time?: string
           title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      pelada_bans: {
+        Row: {
+          banned_at: string
+          banned_by: string | null
+          expires_at: string
+          id: string
+          pelada_id: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          banned_at?: string
+          banned_by?: string | null
+          expires_at: string
+          id?: string
+          pelada_id: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          banned_at?: string
+          banned_by?: string | null
+          expires_at?: string
+          id?: string
+          pelada_id?: string
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pelada_bans_pelada_id_fkey"
+            columns: ["pelada_id"]
+            isOneToOne: false
+            referencedRelation: "peladas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
