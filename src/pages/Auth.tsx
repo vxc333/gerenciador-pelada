@@ -71,16 +71,6 @@ const Auth = () => {
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? "Aguarde..." : isLogin ? "Entrar" : "Criar Conta"}
           </Button>
-          <p className="text-center text-sm text-muted-foreground">
-            {isLogin ? "Nao tem conta? " : "Ja tem conta? "}
-            <button
-              type="button"
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-primary underline"
-            >
-              {isLogin ? "Criar conta" : "Fazer login"}
-            </button>
-          </p>
         </form>
       </div>
     </div>
