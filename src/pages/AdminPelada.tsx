@@ -5,10 +5,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Check, Link as LinkIcon, Shield, Shuffle, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, Download, Link as LinkIcon, Shield, Shuffle, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import {
+  formatDateBrasiliaLong,
+  formatWeekdayDateTimeBrasilia,
+  fromBrasiliaDateTimeLocalInput,
+  toBrasiliaDateTimeLocalInput,
+} from "@/lib/datetime-br";
+import { getPeladaRules, setPeladaRules, type PeladaRules } from "@/lib/pelada-rules";
 import type { Json, Tables } from "@/integrations/supabase/types";
 
 type DrawTeam = { team: number; players: string[] };
@@ -19,6 +24,7 @@ type JoinRequestRow = Tables<"pelada_join_requests">;
 type PeladaAdminRow = Tables<"pelada_admins">;
 type PeladaBanRow = Tables<"pelada_bans">;
 type UserProfileRow = Tables<"user_profiles">;
+type TimelineEvent = { id: string; message: string; at: string };
 
 const parseDrawResult = (value: Json | null): DrawTeam[] | null => {
   if (!Array.isArray(value)) return null;
@@ -54,7 +60,7 @@ const shuffle = <T,>(arr: T[]) => {
 
 const AdminPelada = () => {
   const { id } = useParams<{ id: string }>();
-  const { user, loading } = useAuth();
+  const { user, loading, profileChecked, hasProfileName } = useAuth();
 
   const [pelada, setPelada] = useState<PeladaRow | null>(null);
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -70,6 +76,11 @@ const AdminPelada = () => {
   const [banDaysByUser, setBanDaysByUser] = useState<Record<string, number>>({});
   const [notFound, setNotFound] = useState(false);
   const [forbidden, setForbidden] = useState(false);
+  const [rules, setRules] = useState<PeladaRules>({
+    autoConfirmAdmins: true,
+    maxGuestsPerMember: 3,
+    progressiveWarningHours: 24,
+  });
 
   const fetchAll = useCallback(async () => {
     if (!id || !user) return;
@@ -100,7 +111,8 @@ const AdminPelada = () => {
 
     setForbidden(false);
     setPelada({ ...p, draw_result: parseDrawResult(p.draw_result) });
-    setOpenAt(format(new Date(p.confirmations_open_at), "yyyy-MM-dd'T'HH:mm"));
+    setRules(getPeladaRules(p.id));
+    setOpenAt(toBrasiliaDateTimeLocalInput(p.confirmations_open_at));
     setListPriorityMode(p.list_priority_mode);
     setGuestPriorityMode(p.guest_priority_mode);
     setDelegatedAdmins(safeAdminRows);
@@ -212,6 +224,15 @@ const AdminPelada = () => {
     });
   }, [approvedRequestUserIds, delegatedAdmins, members, pelada?.user_id, profilesByUserId]);
 
+  const formatGameDate = () => {
+    if (!pelada) return "";
+    try {
+      return formatDateBrasiliaLong(new Date(`${pelada.date}T12:00:00Z`));
+    } catch {
+      return pelada.date;
+    }
+  };
+
   const sortedMembers = useMemo(() => {
     const copy = [...members];
     if (listPriorityMode === "member_priority") {
@@ -239,13 +260,91 @@ const AdminPelada = () => {
     return names;
   }, [guestsByMember, sortedMembers]);
 
-  if (loading) return null;
+  const timelineEvents = useMemo<TimelineEvent[]>(() => {
+    if (!pelada) return [];
+
+    const requestsEvents: TimelineEvent[] = joinRequests.map((request) => {
+      const actor = profilesByUserId[request.user_id]?.display_name || request.display_name || "Usuário";
+      if (request.status === "pending") {
+        return {
+          id: `req-pending-${request.id}`,
+          message: `${actor} solicitou entrada`,
+          at: request.created_at,
+        };
+      }
+
+      return {
+        id: `req-review-${request.id}`,
+        message: `${actor} foi ${request.status === "approved" ? "aprovado" : "recusado"}`,
+        at: request.reviewed_at || request.created_at,
+      };
+    });
+
+    const banEvents: TimelineEvent[] = bans.map((ban) => ({
+      id: `ban-${ban.id}`,
+      message: `${profilesByUserId[ban.user_id]?.display_name || "Usuário"} banido`,
+      at: ban.banned_at,
+    }));
+
+    const memberEvents: TimelineEvent[] = members.map((member) => ({
+      id: `member-${member.id}`,
+      message: `${member.member_name} entrou na lista${member.is_waiting ? " (espera)" : ""}`,
+      at: member.created_at,
+    }));
+
+    const drawEvents: TimelineEvent[] = pelada.draw_done_at
+      ? [
+          {
+            id: `draw-${pelada.id}`,
+            message: "Sorteio oficial concluído",
+            at: pelada.draw_done_at,
+          },
+        ]
+      : [];
+
+    return [...requestsEvents, ...banEvents, ...memberEvents, ...drawEvents]
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 80);
+  }, [bans, joinRequests, members, pelada, profilesByUserId]);
+
+  const saveRules = () => {
+    if (!pelada) return;
+    setPeladaRules(pelada.id, rules);
+    toast.success("Regras da pelada salvas");
+  };
+
+  const exportTimelineCsv = () => {
+    if (!pelada || timelineEvents.length === 0) {
+      toast.error("Não há eventos para exportar");
+      return;
+    }
+
+    const rows = [
+      ["data_hora_brasilia", "evento"],
+      ...timelineEvents.map((event) => [formatDateTimeBrasilia(event.at), event.message]),
+    ];
+
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `timeline-${pelada.id}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading || !profileChecked) return null;
   if (!user) return <Navigate to="/auth" replace />;
+  if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
 
   if (notFound) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-muted-foreground">Pelada nao encontrada</p>
+        <p className="text-muted-foreground">Pelada não encontrada</p>
       </div>
     );
   }
@@ -253,7 +352,7 @@ const AdminPelada = () => {
   if (forbidden) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-muted-foreground">Voce nao tem permissao para administrar essa pelada.</p>
+        <p className="text-muted-foreground">Você não tem permissão para administrar esta pelada.</p>
       </div>
     );
   }
@@ -266,17 +365,19 @@ const AdminPelada = () => {
   };
 
   const saveOpenAt = async () => {
+    const openAtIso = fromBrasiliaDateTimeLocalInput(openAt);
+
     const { error } = await supabase
       .from("peladas")
-      .update({ confirmations_open_at: new Date(openAt).toISOString() })
+      .update({ confirmations_open_at: openAtIso })
       .eq("id", pelada.id);
 
     if (error) {
-      toast.error("Nao foi possivel salvar horario de abertura");
+      toast.error("Não foi possível salvar horário de abertura");
       return;
     }
 
-    toast.success("Horario de abertura atualizado");
+    toast.success("Horário de abertura atualizado");
     fetchAll();
   };
 
@@ -287,7 +388,7 @@ const AdminPelada = () => {
       .eq("id", pelada.id);
 
     if (error) {
-      toast.error("Nao foi possivel salvar regras de prioridade");
+      toast.error("Não foi possível salvar regras de prioridade");
       return;
     }
 
@@ -303,11 +404,11 @@ const AdminPelada = () => {
       .eq("status", "pending");
 
     if (error) {
-      toast.error("Nao foi possivel revisar a solicitacao");
+      toast.error("Não foi possível revisar a solicitação");
       return;
     }
 
-    toast.success(status === "approved" ? "Solicitacao aprovada" : "Solicitacao recusada");
+    toast.success(status === "approved" ? "Solicitação aprovada" : "Solicitação recusada");
     fetchAll();
   };
 
@@ -318,7 +419,7 @@ const AdminPelada = () => {
     }
 
     if (targetUserId === pelada.user_id) {
-      toast.error("Esse usuario ja e o admin principal");
+      toast.error("Esse usuário já é o admin principal");
       return;
     }
 
@@ -330,9 +431,9 @@ const AdminPelada = () => {
 
     if (error) {
       if (error.code === "23505") {
-        toast.error("Esse usuario ja e admin dessa pelada");
+        toast.error("Esse usuário já é admin desta pelada");
       } else {
-        toast.error("Nao foi possivel delegar admin");
+        toast.error("Não foi possível delegar admin");
       }
       return;
     }
@@ -354,7 +455,7 @@ const AdminPelada = () => {
       .eq("user_id", targetUserId);
 
     if (error) {
-      toast.error("Nao foi possivel remover admin");
+      toast.error("Não foi possível remover admin");
       return;
     }
 
@@ -408,7 +509,7 @@ const AdminPelada = () => {
     );
 
     if (error) {
-      toast.error("Nao foi possivel banir o usuario");
+      toast.error("Não foi possível banir o usuário");
       return;
     }
 
@@ -421,14 +522,14 @@ const AdminPelada = () => {
         .eq("user_id", targetUserId),
     ]);
 
-    toast.success(`Usuario banido por ${days} dia(s)`);
+    toast.success(`Usuário banido por ${days} dia(s)`);
     fetchAll();
   };
 
   const unbanUser = async (targetUserId: string) => {
     const { error } = await supabase.from("pelada_bans").delete().eq("pelada_id", pelada.id).eq("user_id", targetUserId);
     if (error) {
-      toast.error("Nao foi possivel remover banimento");
+      toast.error("Não foi possível remover banimento");
       return;
     }
 
@@ -438,12 +539,12 @@ const AdminPelada = () => {
 
   const handleDraw = async () => {
     if (pelada.draw_done_at) {
-      toast.error("Esse sorteio ja foi realizado e nao pode ser repetido.");
+      toast.error("Esse sorteio já foi realizado e não pode ser repetido.");
       return;
     }
 
     if (eligibleEntries.length === 0) {
-      toast.error("Nao ha jogadores elegiveis para sorteio");
+      toast.error("Não há jogadores elegíveis para sorteio");
       return;
     }
 
@@ -467,7 +568,7 @@ const AdminPelada = () => {
       .is("draw_done_at", null);
 
     if (error) {
-      toast.error("Nao foi possivel concluir o sorteio");
+      toast.error("Não foi possível concluir o sorteio");
       return;
     }
 
@@ -477,7 +578,7 @@ const AdminPelada = () => {
 
   const formatOpenAt = () => {
     try {
-      return format(new Date(pelada.confirmations_open_at), "EEEE, dd/MM 'as' HH:mm", { locale: ptBR });
+      return `${formatWeekdayDateTimeBrasilia(pelada.confirmations_open_at)} (horário de Brasília)`;
     } catch {
       return pelada.confirmations_open_at;
     }
@@ -495,7 +596,7 @@ const AdminPelada = () => {
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-display text-xl text-primary sm:text-2xl">{pelada.title}</h1>
             <p className="truncate text-xs text-muted-foreground sm:text-sm">
-              {pelada.location} - {pelada.time} - {pelada.date}
+              {pelada.location} - {pelada.time} - {formatGameDate()}
             </p>
           </div>
         </div>
@@ -504,7 +605,7 @@ const AdminPelada = () => {
       <main className="container mx-auto max-w-2xl space-y-5 px-4 py-5">
         <div className="flex gap-2">
           <Button variant="secondary" onClick={copyLink} className="flex-1 gap-2 text-sm">
-            <LinkIcon className="h-4 w-4" /> Link publico
+            <LinkIcon className="h-4 w-4" /> Link público
           </Button>
           <Button onClick={handleDraw} className="flex-1 gap-2 text-sm" disabled={!!pelada.draw_done_at}>
             <Shuffle className="h-4 w-4" /> {pelada.draw_done_at ? "Sorteio finalizado" : "Fazer sorteio"}
@@ -512,7 +613,7 @@ const AdminPelada = () => {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">ABERTURA DAS CONFIRMACOES</h2>
+          <h2 className="mb-2 font-display text-lg text-foreground">ABERTURA DAS CONFIRMAÇÕES</h2>
           <p className="mb-2 text-xs text-muted-foreground">Atual: {formatOpenAt()}</p>
           <div className="flex gap-2">
             <Input
@@ -528,7 +629,7 @@ const AdminPelada = () => {
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-2 font-display text-lg text-foreground">PRIORIDADE DA LISTA</h2>
           <p className="mb-3 text-xs text-muted-foreground">
-            Defina se a ordem segue confirmacao ou prioridade manual e como os convidados entram na fila.
+            Defina se a ordem segue confirmação ou prioridade manual e como os convidados entram na fila.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
@@ -538,7 +639,7 @@ const AdminPelada = () => {
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="confirmation_order">Ordem de confirmacao</SelectItem>
+                  <SelectItem value="confirmation_order">Ordem de confirmação</SelectItem>
                   <SelectItem value="member_priority">Prioridade manual</SelectItem>
                 </SelectContent>
               </Select>
@@ -552,7 +653,7 @@ const AdminPelada = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="grouped_with_member">Agrupados no membro</SelectItem>
-                  <SelectItem value="guest_added_order">Ordem de adicao</SelectItem>
+                  <SelectItem value="guest_added_order">Ordem de adição</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -563,8 +664,72 @@ const AdminPelada = () => {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">SOLICITACOES DE ENTRADA</h2>
-          <p className="mb-3 text-xs text-muted-foreground">Admins da pelada aprovam ou recusam. Banidos nao podem ser aprovados.</p>
+          <h2 className="mb-2 font-display text-lg text-foreground">REGRAS CONFIGURÁVEIS</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Defina comportamento automático para admins, convidados e avisos de confirmação.</p>
+
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={rules.autoConfirmAdmins}
+                onChange={(e) => setRules((prev) => ({ ...prev, autoConfirmAdmins: e.target.checked }))}
+              />
+              Admins sempre confirmados automaticamente
+            </label>
+
+            <div>
+              <p className="mb-1 text-xs text-muted-foreground">Limite de convidados por membro</p>
+              <Input
+                type="number"
+                min={0}
+                max={20}
+                value={rules.maxGuestsPerMember}
+                onChange={(e) => setRules((prev) => ({ ...prev, maxGuestsPerMember: Number(e.target.value || 0) }))}
+              />
+            </div>
+
+            <div>
+              <p className="mb-1 text-xs text-muted-foreground">Horas para aviso progressivo de confirmação</p>
+              <Input
+                type="number"
+                min={1}
+                max={168}
+                value={rules.progressiveWarningHours}
+                onChange={(e) => setRules((prev) => ({ ...prev, progressiveWarningHours: Number(e.target.value || 1) }))}
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 flex justify-end">
+            <Button onClick={saveRules}>Salvar regras</Button>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-display text-lg text-foreground">TIMELINE DE DECISÕES</h2>
+            <Button variant="outline" size="sm" className="gap-2" onClick={exportTimelineCsv}>
+              <Download className="h-4 w-4" /> Exportar CSV
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            {timelineEvents.length === 0 && (
+              <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">Sem eventos registrados ainda.</p>
+            )}
+
+            {timelineEvents.map((event) => (
+              <div key={event.id} className="rounded-md border border-border bg-secondary/30 p-2">
+                <p className="text-sm text-foreground">{event.message}</p>
+                <p className="text-xs text-muted-foreground">{formatDateTimeBrasilia(event.at)} (Brasília)</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-3 font-display text-lg text-foreground">SOLICITAÇÕES DE ENTRADA</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Admins da pelada aprovam ou recusam. Banidos não podem ser aprovados.</p>
 
           <div className="space-y-2">
             {pendingRequests.map((request) => (
@@ -576,7 +741,7 @@ const AdminPelada = () => {
                 <div className="flex gap-1">
                   {bannedUserIds.has(request.user_id) ? (
                     <Button size="sm" variant="outline" disabled>
-                      Usuario banido
+                      Usuário banido
                     </Button>
                   ) : (
                     <Button size="sm" onClick={() => reviewJoinRequest(request.id, "approved")} className="gap-1">
@@ -596,7 +761,7 @@ const AdminPelada = () => {
             ))}
 
             {pendingRequests.length === 0 && (
-              <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">Sem solicitacoes pendentes</p>
+              <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">Sem solicitações pendentes</p>
             )}
           </div>
         </div>
@@ -604,8 +769,8 @@ const AdminPelada = () => {
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-3 font-display text-lg text-foreground">ADMINS DELEGADOS</h2>
           <p className="mb-3 text-xs text-muted-foreground">
-            O dono da pelada e sempre admin. Somente admin supremo pode promover ou remover admins delegados.
-            Usuarios aprovados na entrada ja podem virar admin, mesmo antes da confirmacao de presenca.
+            O dono da pelada é sempre admin. Somente admin supremo pode promover ou remover admins delegados.
+            Usuários aprovados na entrada já podem virar admin, mesmo antes da confirmação de presença.
           </p>
 
           <div className="space-y-2">
@@ -655,15 +820,15 @@ const AdminPelada = () => {
 
             {adminCandidates.length === 0 && (
               <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">
-                Ainda nao ha usuarios aprovados para delegar
+                Ainda não há usuários aprovados para delegar
               </p>
             )}
           </div>
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">SELECAO PARA O JOGO</h2>
-          <p className="mb-3 text-xs text-muted-foreground">Todos fora da espera entram no sorteio automaticamente. Goleiros nao entram no sorteio.</p>
+          <h2 className="mb-3 font-display text-lg text-foreground">SELEÇÃO PARA O JOGO</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Todos fora da espera entram no sorteio automaticamente. Goleiros não entram no sorteio.</p>
 
           <div className="space-y-2">
             {sortedMembers.map((member) => (
@@ -730,11 +895,11 @@ const AdminPelada = () => {
               </div>
             ))}
 
-            {members.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Sem confirmacoes ainda</p>}
+            {members.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Sem confirmações ainda</p>}
           </div>
 
           <div className="mt-4 rounded-md bg-muted p-3 text-xs text-muted-foreground">
-            Elegiveis para sorteio: {eligibleEntries.length}
+            Elegíveis para sorteio: {eligibleEntries.length}
           </div>
         </div>
 
