@@ -21,16 +21,16 @@ type MemberRow = Tables<"pelada_members">;
 
 /**
  * Calcula estatísticas de participação do usuário
- * Inclui peladas passadas (happening_at < now)
+ * Inclui peladas passadas (date < hoje)
  */
 export async function calculateParticipationStats(userId: string): Promise<ParticipationStats> {
-  const now = new Date().toISOString();
+  const today = new Date().toISOString().slice(0, 10);
 
   // Step 1: Buscar todas as peladas que já passaram
   const { data: pastPeladasList, error: pastPeladasError } = await supabase
     .from("peladas")
-    .select("id, happening_at")
-    .lt("happening_at", now);
+    .select("id, date")
+    .lt("date", today);
 
   if (pastPeladasError || !pastPeladasList || pastPeladasList.length === 0) {
     return {
@@ -187,7 +187,7 @@ export async function getUserPeladaHistory(userId: string, limit: number = 20) {
 
   const { data: peladas, error: peladasError } = await supabase
     .from("peladas")
-    .select("id, title, happening_at, location");
+    .select("id, title, date, location");
 
   if (peladasError || !peladas) {
     return [];
@@ -195,7 +195,7 @@ export async function getUserPeladaHistory(userId: string, limit: number = 20) {
 
   // Criar mapa de peladas
   const peladasMap = new Map(
-    (peladas as unknown as Array<{ id?: string; title?: string; happening_at?: string; location?: string }>).map((p) => [p.id, p])
+    (peladas as unknown as Array<{ id?: string; title?: string; date?: string; location?: string }>).map((p) => [p.id, p])
   );
 
   // Filtar apenas peladas passadas
@@ -204,14 +204,14 @@ export async function getUserPeladaHistory(userId: string, limit: number = 20) {
       const pelada = peladasMap.get(entry.pelada_id);
       if (!pelada) return null;
 
-      const happeningDate = new Date(pelada.happening_at || new Date());
+      const happeningDate = new Date(`${pelada.date || "1970-01-01"}T12:00:00Z`);
       if (happeningDate > now) return null; // Apenas peladas passadas
 
       return {
         id: entry.id || "",
         peladaId: entry.pelada_id || "",
         peladaTitle: pelada.title || "Pelada",
-        peladaDate: pelada.happening_at || new Date().toISOString(),
+        peladaDate: pelada.date ? `${pelada.date}T12:00:00Z` : new Date().toISOString(),
         peladaLocation: pelada.location || "Local desconhecido",
         status: "confirmed" as const,
         confirmed: true,
