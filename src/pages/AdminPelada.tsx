@@ -222,7 +222,7 @@ const AdminPelada = () => {
         isApprovedJoin: wasApproved,
       };
     });
-  }, [approvedRequestUserIds, delegatedAdmins, members, pelada?.user_id, profilesByUserId]);
+}, [approvedRequestUserIds, delegatedAdmins, members, pelada, profilesByUserId]);
 
   const formatGameDate = () => {
     if (!pelada) return "";

@@ -76,6 +76,23 @@ const Index = () => {
   const { user, loading, profileChecked, hasProfileName, signOut } = useAuth();
   const routerLocation = useLocation();
   const navigate = useNavigate();
+  
+  // Fallback para funções de formatação em caso de import falha
+  const safeDateFormat = useCallback((value: Date | string) => {
+    try {
+      return formatDateTimeBrasilia(value);
+    } catch {
+      return typeof value === "string" ? value : value.toISOString();
+    }
+  }, []);
+
+  const safeDateLongFormat = useCallback((value: Date | string) => {
+    try {
+      return formatDateBrasiliaLong(value);
+    } catch {
+      return typeof value === "string" ? value : value.toLocaleDateString("pt-BR");
+    }
+  }, []);
   const [myPeladas, setMyPeladas] = useState<PeladaCard[]>([]);
   const [availablePeladas, setAvailablePeladas] = useState<PeladaCard[]>([]);
   const [newDate, setNewDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -99,7 +116,7 @@ const Index = () => {
   const [notificationEvents, setNotificationEvents] = useState<NotificationEvent[]>([]);
   const [pendingGlobalCount, setPendingGlobalCount] = useState(0);
   const [participationStats, setParticipationStats] = useState<ParticipationStats | null>(null);
-  const [peladaHistory, setPeladaHistory] = useState<any[]>([]);
+  const [peladaHistory, setPeladaHistory] = useState<Array<{ id: string; peladaId: string; peladaTitle: string; peladaDate: string; peladaLocation: string; status: string; confirmed: boolean; createdAt: string }>>([]);
   const [loadingStats, setLoadingStats] = useState(false);
 
   const fetchParticipationStats = useCallback(async () => {
@@ -242,7 +259,7 @@ const Index = () => {
             .in("pelada_id", managedIds)
             .order("created_at", { ascending: false })
             .limit(60)
-        : Promise.resolve({ data: [] as any[] }),
+        : Promise.resolve({ data: [] as Array<{ id: string; pelada_id: string; status: string; display_name: string; created_at: string; reviewed_at: string }> }),
       managedIds.length > 0
         ? supabase
             .from("pelada_bans")
@@ -250,12 +267,12 @@ const Index = () => {
             .in("pelada_id", managedIds)
             .order("banned_at", { ascending: false })
             .limit(40)
-        : Promise.resolve({ data: [] as any[] }),
+        : Promise.resolve({ data: [] as Array<{ id: string; pelada_id: string; reason: string; banned_at: string }> }),
     ]);
 
     const titlesById = new Map((allData || []).map((p) => [p.id, p.title]));
 
-    const requestEvents: NotificationEvent[] = (requestsEventsRes.data || []).map((row: any) => {
+    const requestEvents: NotificationEvent[] = (requestsEventsRes.data || []).map((row: { id: string; pelada_id: string; status: string; display_name: string; created_at: string; reviewed_at: string }) => {
       if (row.status === "pending") {
         return {
           id: `request-${row.id}`,
@@ -278,7 +295,7 @@ const Index = () => {
       };
     });
 
-    const banEvents: NotificationEvent[] = (bansEventsRes.data || []).map((row: any) => ({
+    const banEvents: NotificationEvent[] = (bansEventsRes.data || []).map((row: { id: string; pelada_id: string; reason: string; banned_at: string }) => ({
       id: `ban-${row.id}`,
       type: "ban",
       peladaId: row.pelada_id,
@@ -316,6 +333,23 @@ const Index = () => {
       fetchParticipationStats();
     }
   }, [user, fetchPeladas, fetchParticipationStats]);
+
+  useEffect(() => {
+    if (!user || !profileChecked) return;
+
+    if (!hasProfileName || new URLSearchParams(routerLocation.search).get("complete-profile") === "1") {
+      setProfileModalOpen(true);
+    }
+  }, [hasProfileName, routerLocation.search, profileChecked, user]);
+
+  useEffect(() => {
+    const search = new URLSearchParams(routerLocation.search);
+    if (search.get("complete-profile") !== "1" || !hasProfileName) return;
+
+    search.delete("complete-profile");
+    const query = search.toString();
+    navigate(query ? `/?${query}` : "/", { replace: true });
+  }, [hasProfileName, routerLocation.search, navigate]);
 
   if (loading || !profileChecked) return null;
   if (!user) return <Navigate to="/auth" replace />;
@@ -421,9 +455,17 @@ const Index = () => {
 
   const formatEventTime = (dateTime: string) => {
     try {
-      return formatDateTimeBrasilia(dateTime);
+      return safeDateFormat(dateTime);
     } catch {
       return dateTime;
+    }
+  };
+
+  const formatHistoryDate = (dateStr: string) => {
+    try {
+      return safeDateLongFormat(new Date(dateStr));
+    } catch {
+      return "Data desconhecida";
     }
   };
 
@@ -510,23 +552,6 @@ const Index = () => {
       ];
 
   const onboardingDoneCount = onboardingItems.filter((item) => item.done).length;
-
-  useEffect(() => {
-    if (!user || !profileChecked) return;
-
-    if (!hasProfileName || new URLSearchParams(routerLocation.search).get("complete-profile") === "1") {
-      setProfileModalOpen(true);
-    }
-  }, [hasProfileName, routerLocation.search, profileChecked, user]);
-
-  useEffect(() => {
-    const search = new URLSearchParams(routerLocation.search);
-    if (search.get("complete-profile") !== "1" || !hasProfileName) return;
-
-    search.delete("complete-profile");
-    const query = search.toString();
-    navigate(query ? `/?${query}` : "/", { replace: true });
-  }, [hasProfileName, routerLocation.search, navigate]);
 
   const renderPeladaCard = (p: PeladaCard, options?: { showAdminActions?: boolean; availableCard?: boolean }) => {
     const showAdminActions = options?.showAdminActions ?? false;
@@ -972,7 +997,7 @@ const Index = () => {
                 <div className="mt-4">
                   <p className="mb-2 text-xs font-medium text-muted-foreground">ÚLTIMAS PELADAS</p>
                   <div className="space-y-2">
-                    {peladaHistory.slice(0, 5).map((pelada: any) => {
+                    {peladaHistory.slice(0, 5).map((pelada: { id: string; peladaId: string; peladaTitle: string; peladaDate: string; peladaLocation: string; confirmed: boolean }) => {
                       if (!pelada || !pelada.id) return null;
                       return (
                         <div key={pelada.id} className="flex items-center justify-between rounded-md border border-border/50 bg-secondary/20 p-2 text-xs">
@@ -980,7 +1005,7 @@ const Index = () => {
                             <p className="font-medium text-foreground">{pelada.peladaTitle || "Pelada"}</p>
                             <p className="text-muted-foreground">
                               {pelada.peladaLocation || "Local desconhecido"} • 
-                              {pelada.peladaDate ? formatDateBrasiliaLong(new Date(pelada.peladaDate)) : "Data desconhecida"}
+                              {pelada.peladaDate ? formatHistoryDate(pelada.peladaDate) : "Data desconhecida"}
                             </p>
                           </div>
                           <div className="rounded-md bg-primary/20 px-2 py-1 text-xs font-medium text-primary">

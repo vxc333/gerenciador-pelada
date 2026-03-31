@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 
@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return "";
   };
 
-  const syncProfileNameState = async (authUser: User | null) => {
+  const syncProfileNameState = useCallback(async (authUser: User | null) => {
     if (!authUser) {
       setProfileChecked(true);
       setHasProfileName(false);
@@ -83,7 +83,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     setHasProfileName(true);
     setProfileChecked(true);
-  };
+  }, []);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -103,7 +103,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [syncProfileNameState]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
