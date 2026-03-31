@@ -8,8 +8,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Shield, Trash2 } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia } from "@/lib/datetime-br";
+import { getPeladaRules } from "@/lib/pelada-rules";
 import type { Json, Tables } from "@/integrations/supabase/types";
 
 type DrawTeam = { team: number; players: string[] };
@@ -50,7 +50,7 @@ const getInitial = (name: string) => {
 
 const PublicPelada = () => {
   const { id } = useParams<{ id: string }>();
-  const { user, loading } = useAuth();
+  const { user, loading, profileChecked, hasProfileName } = useAuth();
 
   const [pelada, setPelada] = useState<PeladaRow | null>(null);
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -63,6 +63,7 @@ const PublicPelada = () => {
   const [isDelegatedAdmin, setIsDelegatedAdmin] = useState(false);
   const [isBanned, setIsBanned] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [rules, setRules] = useState(getPeladaRules(""));
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
@@ -77,6 +78,7 @@ const PublicPelada = () => {
       ...p,
       draw_result: parseDrawResult(p.draw_result),
     });
+    setRules(getPeladaRules(p.id));
 
     const { data: membersData } = await supabase
       .from("pelada_members")
@@ -147,6 +149,10 @@ const PublicPelada = () => {
   const profileHasName = !!myProfile?.display_name?.trim();
   const confirmationsOpen = !!pelada && new Date() >= new Date(pelada.confirmations_open_at);
   const canConfirm = canAccessPelada && (isAdmin || confirmationsOpen);
+  const showProgressiveWarning =
+    !!pelada &&
+    !confirmationsOpen &&
+    new Date(pelada.confirmations_open_at).getTime() - Date.now() <= rules.progressiveWarningHours * 60 * 60 * 1000;
 
   const memberCapacity = pelada?.max_players || 0;
   const gkCapacity = pelada?.max_goalkeepers || 0;
@@ -164,30 +170,58 @@ const PublicPelada = () => {
     return "";
   }, [myProfile?.display_name, user]);
 
+  const preferredMemberName = getInitialMemberName().trim();
+
   useEffect(() => {
     if (!memberName && user) {
       setMemberName(getInitialMemberName());
     }
   }, [user, memberName, getInitialMemberName]);
 
+  useEffect(() => {
+    const autoEnrollAdmin = async () => {
+      if (!user || !pelada || !isAdmin || myMember || !canAccessPelada || isBanned || !preferredMemberName || !rules.autoConfirmAdmins) return;
+
+      const { error } = await supabase.from("pelada_members").upsert(
+        {
+          pelada_id: pelada.id,
+          user_id: user.id,
+          member_name: preferredMemberName,
+          member_avatar_url: myProfile?.avatar_url || null,
+          is_goalkeeper: false,
+        },
+        { onConflict: "pelada_id,user_id" }
+      );
+
+      if (error) {
+        toast.error("Não foi possível confirmar automaticamente sua presença de admin");
+        return;
+      }
+
+      fetchAll();
+    };
+
+    autoEnrollAdmin();
+  }, [canAccessPelada, fetchAll, isAdmin, isBanned, myMember, myProfile?.avatar_url, pelada, preferredMemberName, rules.autoConfirmAdmins, user]);
+
   const handleConfirmMe = async () => {
     if (!user || !pelada) return;
     if (isBanned) {
-      toast.error("Voce foi banido desta pelada");
+      toast.error("Você foi banido desta pelada");
       return;
     }
     if (!canAccessPelada) {
-      toast.error("Sua entrada na pelada ainda nao foi aprovada pelo admin");
+      toast.error("Sua entrada na pelada ainda não foi aprovada pelo admin");
       return;
     }
     if (!canConfirm) {
-      toast.error("A confirmacao ainda nao esta liberada");
+      toast.error("A confirmação ainda não está liberada");
       return;
     }
 
-    const trimmed = memberName.trim();
+    const trimmed = isAdmin ? preferredMemberName : memberName.trim();
     if (!trimmed) {
-      toast.error("Informe seu nome");
+      toast.error("Informe seu nome no perfil");
       return;
     }
 
@@ -203,11 +237,11 @@ const PublicPelada = () => {
     );
 
     if (error) {
-      toast.error("Nao foi possivel confirmar sua presenca");
+      toast.error("Não foi possível confirmar sua presença");
       return;
     }
 
-    toast.success("Presenca confirmada");
+    toast.success("Presença confirmada");
     fetchAll();
   };
 
@@ -216,38 +250,44 @@ const PublicPelada = () => {
 
     const { error } = await supabase.from("pelada_members").delete().eq("id", myMember.id);
     if (error) {
-      toast.error("Nao foi possivel remover sua confirmacao");
+      toast.error("Não foi possível remover sua confirmação");
       return;
     }
 
-    toast.success("Sua confirmacao foi removida");
+    toast.success("Sua confirmação foi removida");
     fetchAll();
   };
 
   const handleAddGuest = async () => {
     if (!pelada || !myMember) {
-      toast.error("Confirme sua presenca antes de adicionar convidado");
+      toast.error("Confirme sua presença antes de adicionar convidado");
       return;
     }
 
     if (isBanned) {
-      toast.error("Voce foi banido desta pelada");
+      toast.error("Você foi banido desta pelada");
       return;
     }
 
     if (!canAccessPelada) {
-      toast.error("Sua entrada na pelada ainda nao foi aprovada pelo admin");
+      toast.error("Sua entrada na pelada ainda não foi aprovada pelo admin");
       return;
     }
 
     if (!canConfirm) {
-      toast.error("A confirmacao ainda nao esta liberada");
+      toast.error("A confirmação ainda não está liberada");
       return;
     }
 
     const trimmed = guestName.trim();
     if (!trimmed) {
       toast.error("Informe o nome do convidado");
+      return;
+    }
+
+    const myGuestCount = guests.filter((guest) => guest.pelada_member_id === myMember.id).length;
+    if (myGuestCount >= rules.maxGuestsPerMember) {
+      toast.error(`Limite de convidados atingido (${rules.maxGuestsPerMember})`);
       return;
     }
 
@@ -258,7 +298,7 @@ const PublicPelada = () => {
     });
 
     if (error) {
-      toast.error("Nao foi possivel adicionar convidado");
+      toast.error("Não foi possível adicionar convidado");
       return;
     }
 
@@ -270,7 +310,7 @@ const PublicPelada = () => {
   const handleRemoveGuest = async (guestId: string) => {
     const { error } = await supabase.from("pelada_member_guests").delete().eq("id", guestId);
     if (error) {
-      toast.error("Nao foi possivel remover convidado");
+      toast.error("Não foi possível remover convidado");
       return;
     }
 
@@ -281,7 +321,7 @@ const PublicPelada = () => {
   const handleRequestAccess = async () => {
     if (!user || !pelada) return;
     if (isBanned) {
-      toast.error("Voce esta banido desta pelada");
+      toast.error("Você está banido desta pelada");
       return;
     }
 
@@ -301,24 +341,25 @@ const PublicPelada = () => {
 
     if (error) {
       if (error.code === "23505") {
-        toast.error("Voce ja enviou uma solicitacao para essa pelada");
+        toast.error("Você já enviou uma solicitação para essa pelada");
       } else {
-        toast.error("Nao foi possivel enviar sua solicitacao");
+        toast.error("Não foi possível enviar sua solicitação");
       }
       return;
     }
 
-    toast.success("Solicitacao enviada para os admins");
+    toast.success("Solicitação enviada para os admins");
     fetchAll();
   };
 
-  if (loading) return null;
+  if (loading || !profileChecked) return null;
   if (!user) return <Navigate to={`/auth?next=${encodeURIComponent(`/pelada/${id}`)}`} replace />;
+  if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
 
   if (notFound) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-muted-foreground">Pelada nao encontrada</p>
+        <p className="text-muted-foreground">Pelada não encontrada</p>
       </div>
     );
   }
@@ -327,9 +368,17 @@ const PublicPelada = () => {
 
   const formatOpenAt = () => {
     try {
-      return format(new Date(pelada.confirmations_open_at), "EEEE, dd/MM 'as' HH:mm", { locale: ptBR });
+      return `${formatWeekdayDateTimeBrasilia(pelada.confirmations_open_at)} (horário de Brasília)`;
     } catch {
       return pelada.confirmations_open_at;
+    }
+  };
+
+  const formatGameDate = () => {
+    try {
+      return formatDateBrasiliaLong(new Date(`${pelada.date}T12:00:00Z`));
+    } catch {
+      return pelada.date;
     }
   };
 
@@ -357,13 +406,13 @@ const PublicPelada = () => {
       <div className="border-b border-border bg-card px-4 py-6 text-center">
         <h1 className="font-display text-2xl tracking-wider text-primary sm:text-3xl">{pelada.title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{pelada.location} - {pelada.time}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{pelada.date}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{formatGameDate()}</p>
       </div>
 
       <main className="container mx-auto max-w-md space-y-5 px-4 py-5">
         {isBanned && (
           <div className="rounded-lg border border-destructive/40 bg-card p-4">
-            <p className="text-sm text-destructive">Voce esta banido desta pelada.</p>
+            <p className="text-sm text-destructive">Você está banido desta pelada.</p>
           </div>
         )}
 
@@ -371,7 +420,7 @@ const PublicPelada = () => {
           <div className="rounded-lg border border-primary/30 bg-card p-4">
             <h2 className="mb-2 font-display text-lg text-foreground">ENTRADA NA PELADA</h2>
             <p className="mb-3 text-sm text-muted-foreground">
-              Para confirmar presenca, o admin precisa aprovar sua entrada nesta pelada.
+              Para confirmar presença, o admin precisa aprovar sua entrada nesta pelada.
             </p>
 
             {!profileHasName ? (
@@ -383,11 +432,11 @@ const PublicPelada = () => {
               </div>
             ) : myJoinRequest?.status === "pending" ? (
               <Button className="w-full" disabled>
-                Solicitacao enviada (aguardando)
+                Solicitação enviada (aguardando)
               </Button>
             ) : myJoinRequest?.status === "rejected" ? (
               <Button className="w-full" disabled>
-                Solicitacao recusada pelo admin
+                Solicitação recusada pelo admin
               </Button>
             ) : (
               <Button onClick={handleRequestAccess} className="w-full">
@@ -398,22 +447,34 @@ const PublicPelada = () => {
         )}
 
         <div className="rounded-lg border border-primary/30 bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">CONFIRME SUA PRESENCA</h2>
+          <h2 className="mb-2 font-display text-lg text-foreground">CONFIRME SUA PRESENÇA</h2>
 
           {!canConfirm && (
             <p className="mb-3 rounded-md bg-muted p-2 text-xs text-muted-foreground">
-              Confirmacoes abertas em {formatOpenAt()}.
+              Confirmações abertas em {formatOpenAt()}.
             </p>
           )}
 
-          <div className="mb-3">
-            <Input
-              placeholder="Seu nome"
-              value={memberName}
-              onChange={(e) => setMemberName(e.target.value)}
-              className="border-border bg-secondary"
-            />
-          </div>
+          {showProgressiveWarning && (
+            <p className="mb-3 rounded-md bg-accent/10 p-2 text-xs text-accent">
+              Faltam menos de {rules.progressiveWarningHours}h para abrir as confirmações.
+            </p>
+          )}
+
+          {isAdmin ? (
+            <p className="mb-3 rounded-md bg-accent/10 p-2 text-xs text-accent">
+              Você é admin desta pelada e já entra automaticamente na lista com o nome do seu perfil.
+            </p>
+          ) : (
+            <div className="mb-3">
+              <Input
+                placeholder="Seu nome"
+                value={memberName}
+                onChange={(e) => setMemberName(e.target.value)}
+                className="border-border bg-secondary"
+              />
+            </div>
+          )}
 
           <div className="mb-3 flex items-center gap-2">
             <Checkbox id="goalkeeper" checked={isGoalkeeper} onCheckedChange={(checked) => setIsGoalkeeper(!!checked)} />
@@ -424,7 +485,7 @@ const PublicPelada = () => {
 
           <div className="flex gap-2">
             <Button onClick={handleConfirmMe} className="flex-1" disabled={!canConfirm || isBanned}>
-              {myMember ? "Atualizar minha confirmacao" : "Confirmar presenca"}
+              {myMember ? "Atualizar minha confirmação" : "Confirmar presença"}
             </Button>
             {myMember && (
               <Button variant="destructive" onClick={handleRemoveMe}>
@@ -435,14 +496,16 @@ const PublicPelada = () => {
 
           {myMember?.is_waiting && (
             <p className="mt-3 rounded-md bg-muted p-2 text-xs text-muted-foreground">
-              Voce esta na lista de espera. Posicao atual: {myWaitingPosition || "-"}. Quando surgir vaga, o primeiro da fila sobe automaticamente.
+              Você está na lista de espera. Posição atual: {myWaitingPosition || "-"}. Quando surgir vaga, o primeiro da fila sobe automaticamente.
             </p>
           )}
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-2 font-display text-lg text-foreground">CONVIDADOS</h2>
-          <p className="mb-3 text-xs text-muted-foreground">So voce pode adicionar/remover seus convidados.</p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Só você pode adicionar/remover seus convidados. Limite por membro: {rules.maxGuestsPerMember}.
+          </p>
           <div className="mb-3 flex gap-2">
             <Input
               placeholder="Nome do convidado"
@@ -456,7 +519,7 @@ const PublicPelada = () => {
               Adicionar
             </Button>
           </div>
-          {!myMember && <p className="text-xs text-muted-foreground">Confirme sua presenca para liberar convidados.</p>}
+          {!myMember && <p className="text-xs text-muted-foreground">Confirme sua presença para liberar convidados.</p>}
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
@@ -466,7 +529,7 @@ const PublicPelada = () => {
             <span className="rounded-full bg-accent/20 px-2 py-0.5 text-accent">Goleiros: {gkCount}/{gkCapacity}</span>
           </div>
           <p className="mb-2 text-xs text-muted-foreground">
-            Ordem: {pelada.list_priority_mode === "member_priority" ? "prioridade do membro" : "confirmacao"} | convidados: {pelada.guest_priority_mode === "guest_added_order" ? "ordem de adicao" : "agrupados no membro"}
+            Ordem: {pelada.list_priority_mode === "member_priority" ? "prioridade do membro" : "confirmação"} | convidados: {pelada.guest_priority_mode === "guest_added_order" ? "ordem de adição" : "agrupados no membro"}
           </p>
           {waitingMembers.length > 0 && (
             <p className="mb-2 text-xs text-muted-foreground">Lista de espera atual: {waitingMembers.length}</p>
@@ -520,7 +583,7 @@ const PublicPelada = () => {
               );
             })}
 
-            {members.length === 0 && <p className="py-3 text-center text-sm text-muted-foreground">Ninguem confirmou ainda</p>}
+            {members.length === 0 && <p className="py-3 text-center text-sm text-muted-foreground">Ninguém confirmou ainda</p>}
           </div>
         </div>
 
