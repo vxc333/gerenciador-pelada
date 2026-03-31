@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import AdminPelada from "./pages/AdminPelada";
+import AdminSystem from "./pages/AdminSystem";
 import PublicPelada from "./pages/PublicPelada";
 import NotFound from "./pages/NotFound";
 
@@ -22,6 +23,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/admin" element={<AdminSystem />} />
             <Route path="/admin/:id" element={<AdminPelada />} />
             <Route path="/pelada/:id" element={<PublicPelada />} />
             <Route path="*" element={<NotFound />} />

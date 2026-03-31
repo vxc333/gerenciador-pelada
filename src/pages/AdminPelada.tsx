@@ -840,6 +840,11 @@ const AdminPelada = () => {
                     {member.is_goalkeeper ? " (goleiro)" : ""}
                     {member.is_waiting ? " (espera)" : ""}
                     {bannedUserIds.has(member.user_id) ? " (banido)" : ""}
+                    {member.is_automatic_entry ? (
+                      <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-500/20 px-1.5 py-0.5 text-xs text-green-600">
+                        Automático
+                      </span>
+                    ) : null}
                   </span>
                   <div className="flex items-center gap-1">
                     <Input
