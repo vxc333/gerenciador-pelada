@@ -29,7 +29,7 @@ export async function calculateParticipationStats(userId: string): Promise<Parti
   // Step 1: Buscar todas as peladas que já passaram
   const { data: pastPeladasList, error: pastPeladasError } = await supabase
     .from("peladas")
-    .select("id")
+    .select("id, happening_at")
     .lt("happening_at", now);
 
   if (pastPeladasError || !pastPeladasList || pastPeladasList.length === 0) {
