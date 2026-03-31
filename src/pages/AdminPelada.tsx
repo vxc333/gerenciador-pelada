@@ -88,8 +88,10 @@ const AdminPelada = () => {
     const hasSuperAdmin = !!superAdminRow;
     setIsSuperAdmin(hasSuperAdmin);
 
+    const safeAdminRows = (adminRows || []).filter((row): row is PeladaAdminRow => !!row && !!row.user_id);
+
     const isOwner = p.user_id === user.id;
-    const isDelegatedAdmin = (adminRows || []).some((row) => row.user_id === user.id);
+    const isDelegatedAdmin = safeAdminRows.some((row) => row.user_id === user.id);
 
     if (!isOwner && !isDelegatedAdmin && !hasSuperAdmin) {
       setForbidden(true);
@@ -101,7 +103,7 @@ const AdminPelada = () => {
     setOpenAt(format(new Date(p.confirmations_open_at), "yyyy-MM-dd'T'HH:mm"));
     setListPriorityMode(p.list_priority_mode);
     setGuestPriorityMode(p.guest_priority_mode);
-    setDelegatedAdmins(adminRows || []);
+    setDelegatedAdmins(safeAdminRows);
 
     const [{ data: membersData }, { data: guestsData }, { data: requestsData }, { data: bansData }] = await Promise.all([
       supabase.from("pelada_members").select("*").eq("pelada_id", id).order("created_at", { ascending: true }),
@@ -181,11 +183,17 @@ const AdminPelada = () => {
   }, [joinRequests]);
 
   const adminCandidates = useMemo(() => {
-    const ids = new Set<string>();
-    ids.add(pelada.user_id);
+    if (!pelada) return [];
 
-    delegatedAdmins.forEach((row) => ids.add(row.user_id));
-    members.forEach((member) => ids.add(member.user_id));
+    const ids = new Set<string>();
+    if (pelada.user_id) ids.add(pelada.user_id);
+
+    delegatedAdmins.forEach((row) => {
+      if (row?.user_id) ids.add(row.user_id);
+    });
+    members.forEach((member) => {
+      if (member?.user_id) ids.add(member.user_id);
+    });
     approvedRequestUserIds.forEach((userId) => ids.add(userId));
 
     return Array.from(ids).map((userId) => {
@@ -202,7 +210,7 @@ const AdminPelada = () => {
         isApprovedJoin: wasApproved,
       };
     });
-  }, [approvedRequestUserIds, delegatedAdmins, members, pelada.user_id, profilesByUserId]);
+  }, [approvedRequestUserIds, delegatedAdmins, members, pelada?.user_id, profilesByUserId]);
 
   const sortedMembers = useMemo(() => {
     const copy = [...members];
