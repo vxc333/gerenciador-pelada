@@ -146,19 +146,15 @@ function generateBadges(total: number, confirmationRate: number, noShow: number)
  * Busca peladas passadas do usuário com informações de participação
  */
 export async function getUserPeladaHistory(userId: string, limit: number = 20) {
-  const now = new Date().toISOString();
+  if (!userId) return [];
+  
+  const now = new Date();
 
   const { data: history, error } = await supabase
     .from("pelada_members")
-    .select(
-      `
-      *,
-      peladas!inner(id, title, happening_at, confirmations_open_at, confirmations_close_at, location, user_id)
-    `
-    )
+    .select("id, pelada_id, created_at")
     .eq("user_id", userId)
-    .lt("peladas.happening_at", now)
-    .order("peladas(happening_at)", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(limit);
 
   if (error) {
@@ -166,16 +162,48 @@ export async function getUserPeladaHistory(userId: string, limit: number = 20) {
     return [];
   }
 
-  return (
-    (history as unknown as Array<{ id: string; pelada_id: string; status: string; created_at: string; peladas?: { title?: string; happening_at?: string; location?: string } }>)?.map((entry) => ({
-      id: entry.id,
-      peladaId: entry.pelada_id,
-      peladaTitle: entry.peladas?.title || "Pelada",
-      peladaDate: entry.peladas?.happening_at,
-      peladaLocation: entry.peladas?.location,
-      status: entry.status as "confirmed" | "unconfirmed",
-      confirmed: entry.status === "confirmed",
-      createdAt: entry.created_at,
-    })) || []
+  if (!history || !Array.isArray(history)) {
+    return [];
+  }
+
+  // Buscar detalhes das peladas
+  const peladaIds = (history as unknown as Array<{ pelada_id?: string; id?: string; created_at?: string }>)
+    .map((h) => h.pelada_id)
+    .filter(Boolean);
+  if (peladaIds.length === 0) return [];
+
+  const { data: peladas, error: peladasError } = await supabase
+    .from("peladas")
+    .select("id, title, happening_at, location");
+
+  if (peladasError || !peladas) {
+    return [];
+  }
+
+  // Criar mapa de peladas
+  const peladasMap = new Map(
+    (peladas as unknown as Array<{ id?: string; title?: string; happening_at?: string; location?: string }>).map((p) => [p.id, p])
   );
+
+  // Filtar apenas peladas passadas
+  return (history as unknown as Array<{ pelada_id?: string; id?: string; created_at?: string }>)
+    .map((entry) => {
+      const pelada = peladasMap.get(entry.pelada_id);
+      if (!pelada) return null;
+
+      const happeningDate = new Date(pelada.happening_at || new Date());
+      if (happeningDate > now) return null; // Apenas peladas passadas
+
+      return {
+        id: entry.id || "",
+        peladaId: entry.pelada_id || "",
+        peladaTitle: pelada.title || "Pelada",
+        peladaDate: pelada.happening_at || new Date().toISOString(),
+        peladaLocation: pelada.location || "Local desconhecido",
+        status: "confirmed" as const,
+        confirmed: true,
+        createdAt: entry.created_at || new Date().toISOString(),
+      };
+    })
+    .filter(Boolean);
 }

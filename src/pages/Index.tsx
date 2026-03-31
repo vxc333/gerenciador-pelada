@@ -930,23 +930,23 @@ const Index = () => {
               <div className="grid gap-4 sm:grid-cols-4">
                 <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
                   <p className="text-xs text-muted-foreground">TOTAL JOGADO</p>
-                  <p className="text-2xl font-bold text-foreground">{participationStats.totalParticipated}</p>
+                  <p className="text-2xl font-bold text-foreground">{participationStats.totalParticipated ?? 0}</p>
                 </div>
                 <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
                   <p className="text-xs text-muted-foreground">CONFIRMAÇÕES</p>
-                  <p className="text-2xl font-bold text-primary">{participationStats.totalConfirmed}</p>
+                  <p className="text-2xl font-bold text-primary">{participationStats.totalConfirmed ?? 0}</p>
                 </div>
                 <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
                   <p className="text-xs text-muted-foreground">NÃO COMPARECEU</p>
-                  <p className="text-2xl font-bold text-destructive">{participationStats.totalNoShow}</p>
+                  <p className="text-2xl font-bold text-destructive">{participationStats.totalNoShow ?? 0}</p>
                 </div>
                 <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
                   <p className="text-xs text-muted-foreground">TAXA CONFIRMAÇÃO</p>
-                  <p className="text-2xl font-bold text-accent">{participationStats.confirmationRate}%</p>
+                  <p className="text-2xl font-bold text-accent">{participationStats.confirmationRate ?? 0}%</p>
                 </div>
               </div>
 
-              {participationStats.badges.length > 0 && (
+              {participationStats.badges && participationStats.badges.length > 0 && (
                 <div className="mt-4">
                   <p className="mb-2 text-xs font-medium text-muted-foreground">BADGES DESBLOQUEADOS</p>
                   <div className="flex flex-wrap gap-2">
@@ -960,23 +960,27 @@ const Index = () => {
                 </div>
               )}
 
-              {peladaHistory.length > 0 && (
+              {peladaHistory && Array.isArray(peladaHistory) && peladaHistory.length > 0 && (
                 <div className="mt-4">
                   <p className="mb-2 text-xs font-medium text-muted-foreground">ÚLTIMAS PELADAS</p>
                   <div className="space-y-2">
-                    {peladaHistory.slice(0, 5).map((pelada: any) => (
-                      <div key={pelada.id} className="flex items-center justify-between rounded-md border border-border/50 bg-secondary/20 p-2 text-xs">
-                        <div>
-                          <p className="font-medium text-foreground">{pelada.peladaTitle}</p>
-                          <p className="text-muted-foreground">
-                            {pelada.peladaLocation} • {formatDateBrasiliaLong(new Date(pelada.peladaDate))}
-                          </p>
+                    {peladaHistory.slice(0, 5).map((pelada: any) => {
+                      if (!pelada || !pelada.id) return null;
+                      return (
+                        <div key={pelada.id} className="flex items-center justify-between rounded-md border border-border/50 bg-secondary/20 p-2 text-xs">
+                          <div>
+                            <p className="font-medium text-foreground">{pelada.peladaTitle || "Pelada"}</p>
+                            <p className="text-muted-foreground">
+                              {pelada.peladaLocation || "Local desconhecido"} • 
+                              {pelada.peladaDate ? formatDateBrasiliaLong(new Date(pelada.peladaDate)) : "Data desconhecida"}
+                            </p>
+                          </div>
+                          <div className="rounded-md bg-primary/20 px-2 py-1 text-xs font-medium text-primary">
+                            {pelada.confirmed ? "✅ Confirmou" : "❌ Não compareceu"}
+                          </div>
                         </div>
-                        <div className="rounded-md bg-primary/20 px-2 py-1 text-xs font-medium text-primary">
-                          {pelada.confirmed ? "✅ Confirmou" : "❌ Não compareceu"}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
