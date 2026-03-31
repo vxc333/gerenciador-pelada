@@ -623,16 +623,6 @@ const Index = () => {
 
             {showAdminActions && (
               <>
-                <Link to={`/admin/${p.id}`}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title="Gerenciar"
-                    className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  >
-                    <SettingsIcon className="h-4 w-4" />
-                  </Button>
-                </Link>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -676,6 +666,17 @@ const Index = () => {
                 </Button>
               ) : null
             )}
+          </div>
+        )}
+
+        {showAdminActions && !availableCard && (
+          <div className="mt-3 flex gap-2">
+            <Link to={`/admin/${p.id}`} className="flex-1">
+              <Button className="w-full gap-2">
+                <SettingsIcon className="h-4 w-4" />
+                Gerenciar pelada
+              </Button>
+            </Link>
           </div>
         )}
       </div>
