@@ -189,5 +189,36 @@ WITH CHECK (
   )
 );
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.pelada_members;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.pelada_member_guests;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_publication_rel pr
+    JOIN pg_class c ON c.oid = pr.prrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_publication p ON p.oid = pr.prpubid
+    WHERE p.pubname = 'supabase_realtime'
+      AND n.nspname = 'public'
+      AND c.relname = 'pelada_members'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.pelada_members;
+  END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_publication_rel pr
+    JOIN pg_class c ON c.oid = pr.prrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_publication p ON p.oid = pr.prpubid
+    WHERE p.pubname = 'supabase_realtime'
+      AND n.nspname = 'public'
+      AND c.relname = 'pelada_member_guests'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.pelada_member_guests;
+  END IF;
+END;
+$$;

@@ -119,6 +119,7 @@ USING (
 
 -- Allow delegated admins to update pelada settings, but keep delete for owner only.
 DROP POLICY IF EXISTS "Owners can update peladas" ON public.peladas;
+DROP POLICY IF EXISTS "Owners and delegated admins can update peladas" ON public.peladas;
 CREATE POLICY "Owners and delegated admins can update peladas"
 ON public.peladas
 FOR UPDATE
@@ -159,6 +160,7 @@ USING (
 );
 
 DROP POLICY IF EXISTS "Admin can update member statuses" ON public.pelada_members;
+DROP POLICY IF EXISTS "Admins can update members" ON public.pelada_members;
 CREATE POLICY "Admins can update members"
 ON public.pelada_members
 FOR UPDATE
@@ -217,6 +219,7 @@ USING (
 );
 
 DROP POLICY IF EXISTS "Admin can update guest statuses" ON public.pelada_member_guests;
+DROP POLICY IF EXISTS "Admins can update guest statuses" ON public.pelada_member_guests;
 CREATE POLICY "Admins can update guest statuses"
 ON public.pelada_member_guests
 FOR UPDATE
@@ -224,5 +227,36 @@ TO authenticated
 USING (public.is_pelada_admin(pelada_id, auth.uid()))
 WITH CHECK (public.is_pelada_admin(pelada_id, auth.uid()));
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.pelada_admins;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.pelada_join_requests;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_publication_rel pr
+    JOIN pg_class c ON c.oid = pr.prrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_publication p ON p.oid = pr.prpubid
+    WHERE p.pubname = 'supabase_realtime'
+      AND n.nspname = 'public'
+      AND c.relname = 'pelada_admins'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.pelada_admins;
+  END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_publication_rel pr
+    JOIN pg_class c ON c.oid = pr.prrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_publication p ON p.oid = pr.prpubid
+    WHERE p.pubname = 'supabase_realtime'
+      AND n.nspname = 'public'
+      AND c.relname = 'pelada_join_requests'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.pelada_join_requests;
+  END IF;
+END;
+$$;
