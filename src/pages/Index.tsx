@@ -419,6 +419,14 @@ const Index = () => {
     }
   };
 
+  const formatEventTime = (dateTime: string) => {
+    try {
+      return formatDateTimeBrasilia(dateTime);
+    } catch {
+      return dateTime;
+    }
+  };
+
   const saveProfile = async () => {
     const displayName = profileName.trim();
     if (!displayName) {
@@ -676,7 +684,7 @@ const Index = () => {
                     <div key={event.id} className="rounded-md border border-border bg-card p-3">
                       <p className="text-sm font-medium text-foreground">{event.peladaTitle}</p>
                       <p className="text-sm text-muted-foreground">{event.message}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{formatDateTimeBrasilia(event.at)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{formatEventTime(event.at)}</p>
                     </div>
                   ))}
                 </div>
