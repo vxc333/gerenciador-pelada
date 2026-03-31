@@ -106,7 +106,7 @@ const Auth = () => {
             className="w-full text-sm text-muted-foreground"
             onClick={() => setIsLogin((prev) => !prev)}
           >
-            {isLogin ? "Nao tem conta? Criar conta" : "Ja tem conta? Entrar"}
+            {isLogin ? "Não tem conta? Criar conta" : "Já tem conta? Entrar"}
           </Button>
         </form>
       </div>
