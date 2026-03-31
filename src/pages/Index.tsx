@@ -26,10 +26,12 @@ import {
   Bell,
   UserPlus,
   Shield,
+  Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { formatDateBrasiliaLong, formatDateTimeBrasilia, fromBrasiliaDateTimeLocalInput } from "@/lib/datetime-br";
+import { calculateParticipationStats, getUserPeladaHistory, type ParticipationStats, type Badge as ParticipationBadge } from "@/lib/user-participation-stats";
 import type { Tables } from "@/integrations/supabase/types";
 
 type PeladaRow = Tables<"peladas">;
@@ -96,6 +98,27 @@ const Index = () => {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationEvents, setNotificationEvents] = useState<NotificationEvent[]>([]);
   const [pendingGlobalCount, setPendingGlobalCount] = useState(0);
+  const [participationStats, setParticipationStats] = useState<ParticipationStats | null>(null);
+  const [peladaHistory, setPeladaHistory] = useState<any[]>([]);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  const fetchParticipationStats = useCallback(async () => {
+    if (!user) return;
+
+    setLoadingStats(true);
+    try {
+      const [stats, history] = await Promise.all([
+        calculateParticipationStats(user.id),
+        getUserPeladaHistory(user.id, 10),
+      ]);
+      setParticipationStats(stats);
+      setPeladaHistory(history);
+    } catch (error) {
+      console.error("Error fetching participation stats:", error);
+    } finally {
+      setLoadingStats(false);
+    }
+  }, [user]);
 
   const enrichWithCounts = useCallback(async (items: PeladaRow[]) => {
     const withCounts = await Promise.all(
@@ -288,8 +311,11 @@ const Index = () => {
   }, [user, enrichWithCounts]);
 
   useEffect(() => {
-    if (user) fetchPeladas();
-  }, [user, fetchPeladas]);
+    if (user) {
+      fetchPeladas();
+      fetchParticipationStats();
+    }
+  }, [user, fetchPeladas, fetchParticipationStats]);
 
   if (loading || !profileChecked) return null;
   if (!user) return <Navigate to="/auth" replace />;
@@ -894,6 +920,69 @@ const Index = () => {
             <p className="mt-3 text-xs text-muted-foreground">Somente admin supremo pode criar novas peladas.</p>
           )}
         </div>
+
+        {!loadingStats && participationStats && (
+          <>
+            <div className="mb-3 mt-8">
+              <h2 className="font-display text-xl text-foreground">HISTÓRICO DE PARTICIPAÇÃO</h2>
+            </div>
+            <div className="mb-6 rounded-lg border border-border bg-card p-4 sm:p-6">
+              <div className="grid gap-4 sm:grid-cols-4">
+                <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
+                  <p className="text-xs text-muted-foreground">TOTAL JOGADO</p>
+                  <p className="text-2xl font-bold text-foreground">{participationStats.totalParticipated}</p>
+                </div>
+                <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
+                  <p className="text-xs text-muted-foreground">CONFIRMAÇÕES</p>
+                  <p className="text-2xl font-bold text-primary">{participationStats.totalConfirmed}</p>
+                </div>
+                <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
+                  <p className="text-xs text-muted-foreground">NÃO COMPARECEU</p>
+                  <p className="text-2xl font-bold text-destructive">{participationStats.totalNoShow}</p>
+                </div>
+                <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
+                  <p className="text-xs text-muted-foreground">TAXA CONFIRMAÇÃO</p>
+                  <p className="text-2xl font-bold text-accent">{participationStats.confirmationRate}%</p>
+                </div>
+              </div>
+
+              {participationStats.badges.length > 0 && (
+                <div className="mt-4">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">BADGES DESBLOQUEADOS</p>
+                  <div className="flex flex-wrap gap-2">
+                    {participationStats.badges.map((badge: ParticipationBadge) => (
+                      <div key={badge.id} className="rounded-full bg-primary/10 px-3 py-1 text-sm" title={badge.description}>
+                        <span className="mr-1">{badge.icon}</span>
+                        {badge.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {peladaHistory.length > 0 && (
+                <div className="mt-4">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">ÚLTIMAS PELADAS</p>
+                  <div className="space-y-2">
+                    {peladaHistory.slice(0, 5).map((pelada: any) => (
+                      <div key={pelada.id} className="flex items-center justify-between rounded-md border border-border/50 bg-secondary/20 p-2 text-xs">
+                        <div>
+                          <p className="font-medium text-foreground">{pelada.peladaTitle}</p>
+                          <p className="text-muted-foreground">
+                            {pelada.peladaLocation} • {formatDateBrasiliaLong(new Date(pelada.peladaDate))}
+                          </p>
+                        </div>
+                        <div className="rounded-md bg-primary/20 px-2 py-1 text-xs font-medium text-primary">
+                          {pelada.confirmed ? "✅ Confirmou" : "❌ Não compareceu"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         {myPeladas.length > 0 && (
           <>
