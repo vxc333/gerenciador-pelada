@@ -4,17 +4,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 const Auth = () => {
   const { user, loading } = useAuth();
+  const location = useLocation();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const search = new URLSearchParams(location.search);
+  const redirectTo = search.get("next") || "/";
 
   if (loading) return null;
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to={redirectTo} replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +39,19 @@ const Auth = () => {
     setSubmitting(false);
   };
 
+  const handleGoogleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth?next=${encodeURIComponent(redirectTo)}`,
+      },
+    });
+
+    if (error) {
+      toast.error(error.message);
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
@@ -47,6 +63,15 @@ const Auth = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-border bg-card p-6">
+          <Button type="button" variant="secondary" onClick={handleGoogleLogin} className="w-full">
+            Entrar com Google
+          </Button>
+
+          <div className="relative text-center text-xs text-muted-foreground">
+            <span className="bg-card px-2">ou use e-mail e senha</span>
+            <div className="absolute left-0 top-1/2 -z-10 h-px w-full bg-border" />
+          </div>
+
           <div>
             <label className="mb-1 block text-sm text-muted-foreground">E-mail</label>
             <Input
@@ -70,6 +95,15 @@ const Auth = () => {
           </div>
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? "Aguarde..." : isLogin ? "Entrar" : "Criar Conta"}
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full text-sm text-muted-foreground"
+            onClick={() => setIsLogin((prev) => !prev)}
+          >
+            {isLogin ? "Nao tem conta? Criar conta" : "Ja tem conta? Entrar"}
           </Button>
         </form>
       </div>
