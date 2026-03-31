@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   Dialog,
   DialogContent,
@@ -21,12 +23,13 @@ import {
   Link as LinkIcon,
   Settings as SettingsIcon,
   LogOut,
+  Bell,
   UserPlus,
   Shield,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatDateBrasiliaLong, formatDateTimeBrasilia, fromBrasiliaDateTimeLocalInput } from "@/lib/datetime-br";
 import type { Tables } from "@/integrations/supabase/types";
 
 type PeladaRow = Tables<"peladas">;
@@ -45,6 +48,16 @@ interface UserProfile {
   avatar_url: string | null;
 }
 
+type NotificationEvent = {
+  id: string;
+  type: "request" | "approval" | "ban" | "draw";
+  peladaId: string;
+  peladaTitle: string;
+  message: string;
+  at: string;
+  isPending?: boolean;
+};
+
 const getInitial = (name: string) => {
   const trimmed = name.trim();
   if (!trimmed) return "?";
@@ -58,7 +71,9 @@ const getDefaultOpenAt = (date: string) => {
 };
 
 const Index = () => {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, profileChecked, hasProfileName, signOut } = useAuth();
+  const routerLocation = useLocation();
+  const navigate = useNavigate();
   const [myPeladas, setMyPeladas] = useState<PeladaCard[]>([]);
   const [availablePeladas, setAvailablePeladas] = useState<PeladaCard[]>([]);
   const [newDate, setNewDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -67,7 +82,7 @@ const Index = () => {
   const [playersPerTeam, setPlayersPerTeam] = useState(10);
   const [maxGk, setMaxGk] = useState(3);
   const [title, setTitle] = useState("PELADA DO FURTO");
-  const [location, setLocation] = useState("IFMA");
+  const [peladaLocation, setPeladaLocation] = useState("IFMA");
   const [time, setTime] = useState("19 H");
   const [fetching, setFetching] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -78,6 +93,9 @@ const Index = () => {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationEvents, setNotificationEvents] = useState<NotificationEvent[]>([]);
+  const [pendingGlobalCount, setPendingGlobalCount] = useState(0);
 
   const enrichWithCounts = useCallback(async (items: PeladaRow[]) => {
     const withCounts = await Promise.all(
@@ -171,7 +189,7 @@ const Index = () => {
       setPlayersPerTeam(last.players_per_team);
       setMaxGk(last.max_goalkeepers);
       setTitle(last.title);
-      setLocation(last.location);
+      setPeladaLocation(last.location);
       setTime(last.time);
     }
 
@@ -193,6 +211,77 @@ const Index = () => {
       };
     });
 
+    const [requestsEventsRes, bansEventsRes] = await Promise.all([
+      managedIds.length > 0
+        ? supabase
+            .from("pelada_join_requests")
+            .select("id,pelada_id,status,display_name,created_at,reviewed_at")
+            .in("pelada_id", managedIds)
+            .order("created_at", { ascending: false })
+            .limit(60)
+        : Promise.resolve({ data: [] as any[] }),
+      managedIds.length > 0
+        ? supabase
+            .from("pelada_bans")
+            .select("id,pelada_id,reason,banned_at")
+            .in("pelada_id", managedIds)
+            .order("banned_at", { ascending: false })
+            .limit(40)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    const titlesById = new Map((allData || []).map((p) => [p.id, p.title]));
+
+    const requestEvents: NotificationEvent[] = (requestsEventsRes.data || []).map((row: any) => {
+      if (row.status === "pending") {
+        return {
+          id: `request-${row.id}`,
+          type: "request",
+          peladaId: row.pelada_id,
+          peladaTitle: titlesById.get(row.pelada_id) || "Pelada",
+          message: `${row.display_name || "Usuário"} solicitou entrada`,
+          at: row.created_at,
+          isPending: true,
+        };
+      }
+
+      return {
+        id: `approval-${row.id}`,
+        type: "approval",
+        peladaId: row.pelada_id,
+        peladaTitle: titlesById.get(row.pelada_id) || "Pelada",
+        message: `${row.display_name || "Usuário"} foi ${row.status === "approved" ? "aprovado" : "recusado"}`,
+        at: row.reviewed_at || row.created_at,
+      };
+    });
+
+    const banEvents: NotificationEvent[] = (bansEventsRes.data || []).map((row: any) => ({
+      id: `ban-${row.id}`,
+      type: "ban",
+      peladaId: row.pelada_id,
+      peladaTitle: titlesById.get(row.pelada_id) || "Pelada",
+      message: `Banimento registrado (${row.reason || "sem motivo"})`,
+      at: row.banned_at,
+    }));
+
+    const drawEvents: NotificationEvent[] = (allData || [])
+      .filter((pelada) => !!pelada.draw_done_at && managedPeladaIds.has(pelada.id))
+      .map((pelada) => ({
+        id: `draw-${pelada.id}-${pelada.draw_done_at}`,
+        type: "draw" as const,
+        peladaId: pelada.id,
+        peladaTitle: pelada.title,
+        message: "Sorteio concluído",
+        at: pelada.draw_done_at as string,
+      }));
+
+    const mergedEvents = [...requestEvents, ...banEvents, ...drawEvents]
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 40);
+
+    setNotificationEvents(mergedEvents);
+    setPendingGlobalCount(Array.from(pendingByPelada.values()).reduce((acc, value) => acc + value, 0));
+
     setMyPeladas(myEnriched);
     setAvailablePeladas(decoratedAvailable);
     setFetching(false);
@@ -202,7 +291,7 @@ const Index = () => {
     if (user) fetchPeladas();
   }, [user, fetchPeladas]);
 
-  if (loading) return null;
+  if (loading || !profileChecked) return null;
   if (!user) return <Navigate to="/auth" replace />;
 
   const handleCreate = async () => {
@@ -211,23 +300,25 @@ const Index = () => {
       return;
     }
 
-    if (profileRequired) {
+    if (profileBlocked) {
       toast.error("Complete e salve seu nome no perfil antes de criar pelada");
       return;
     }
 
     const totalPlayers = numTeams * playersPerTeam;
+    const openAtIso = fromBrasiliaDateTimeLocalInput(openAt);
+
     const { error } = await supabase.from("peladas").insert({
       user_id: user.id,
       date: newDate,
       title,
-      location,
+      location: peladaLocation,
       time,
       num_teams: numTeams,
       players_per_team: playersPerTeam,
       max_players: totalPlayers,
       max_goalkeepers: maxGk,
-      confirmations_open_at: new Date(openAt).toISOString(),
+      confirmations_open_at: openAtIso,
     });
 
     if (error) {
@@ -270,14 +361,14 @@ const Index = () => {
 
     if (error) {
       if (error.code === "23505") {
-        toast.error("Voce ja tem uma solicitacao para essa pelada");
+        toast.error("Você já tem uma solicitação para essa pelada");
       } else {
-        toast.error("Nao foi possivel enviar sua solicitacao");
+        toast.error("Não foi possível enviar sua solicitação");
       }
       return;
     }
 
-    toast.success("Solicitacao enviada ao admin");
+    toast.success("Solicitação enviada ao admin");
     fetchPeladas();
   };
 
@@ -288,8 +379,7 @@ const Index = () => {
 
   const formatDate = (dateStr: string) => {
     try {
-      const [y, m, d] = dateStr.split("-").map(Number);
-      return format(new Date(y, m - 1, d), "dd 'de' MMMM", { locale: ptBR });
+      return formatDateBrasiliaLong(new Date(`${dateStr}T12:00:00Z`));
     } catch {
       return dateStr;
     }
@@ -297,7 +387,7 @@ const Index = () => {
 
   const formatOpenAt = (openDateTime: string) => {
     try {
-      return format(new Date(openDateTime), "dd/MM HH:mm", { locale: ptBR });
+      return `${formatDateTimeBrasilia(openDateTime)} (Brasília)`;
     } catch {
       return openDateTime;
     }
@@ -321,7 +411,7 @@ const Index = () => {
     );
 
     if (error) {
-      toast.error("Nao foi possivel salvar seu perfil");
+      toast.error("Não foi possível salvar seu perfil");
       return;
     }
 
@@ -348,9 +438,9 @@ const Index = () => {
     if (uploadError) {
       const message = uploadError.message?.toLowerCase() || "";
       if (message.includes("bucket") && message.includes("not")) {
-        toast.error("Bucket 'avatars' nao encontrado. Crie no Storage ou rode a migration nova.");
+        toast.error("Bucket 'avatars' não encontrado. Crie no Storage ou rode a migration nova.");
       } else {
-        toast.error("Nao foi possivel enviar a foto");
+        toast.error("Não foi possível enviar a foto");
       }
       setUploadingAvatar(false);
       return;
@@ -363,6 +453,46 @@ const Index = () => {
   };
 
   const profileRequired = profileLoaded && !profileName.trim();
+  const profileBlocked = !hasProfileName || profileRequired;
+
+  const onboardingItems = isSuperAdmin
+    ? [
+        { key: "profile", label: "Completar perfil", done: !!hasProfileName },
+        { key: "first-pelada", label: "Criar primeira pelada", done: myPeladas.length > 0 },
+        { key: "review-requests", label: "Revisar solicitações pendentes", done: pendingGlobalCount === 0 },
+      ]
+    : [
+        { key: "profile", label: "Completar perfil", done: !!hasProfileName },
+        {
+          key: "request-access",
+          label: "Solicitar entrada em uma pelada",
+          done: availablePeladas.some((p) => p.my_request_status === "pending" || p.my_request_status === "approved"),
+        },
+        {
+          key: "confirm-presence",
+          label: "Entrar em uma pelada aprovada",
+          done: availablePeladas.some((p) => p.is_member),
+        },
+      ];
+
+  const onboardingDoneCount = onboardingItems.filter((item) => item.done).length;
+
+  useEffect(() => {
+    if (!user || !profileChecked) return;
+
+    if (!hasProfileName || new URLSearchParams(routerLocation.search).get("complete-profile") === "1") {
+      setProfileModalOpen(true);
+    }
+  }, [hasProfileName, routerLocation.search, profileChecked, user]);
+
+  useEffect(() => {
+    const search = new URLSearchParams(routerLocation.search);
+    if (search.get("complete-profile") !== "1" || !hasProfileName) return;
+
+    search.delete("complete-profile");
+    const query = search.toString();
+    navigate(query ? `/?${query}` : "/", { replace: true });
+  }, [hasProfileName, routerLocation.search, navigate]);
 
   const renderPeladaCard = (p: PeladaCard, options?: { showAdminActions?: boolean; availableCard?: boolean }) => {
     const showAdminActions = options?.showAdminActions ?? false;
@@ -395,12 +525,12 @@ const Index = () => {
               )}
               {availableCard && p.my_request_status === "pending" && (
                 <span className="inline-block rounded-full bg-muted px-3 py-0.5 text-xs font-medium text-muted-foreground">
-                  aguardando aprovacao
+                  aguardando aprovação
                 </span>
               )}
               {availableCard && p.my_request_status === "rejected" && (
                 <span className="inline-block rounded-full bg-destructive/20 px-3 py-0.5 text-xs font-medium text-destructive">
-                  solicitacao recusada
+                  solicitação recusada
                 </span>
               )}
               {availableCard && p.is_member && (
@@ -415,7 +545,7 @@ const Index = () => {
               )}
               {(showAdminActions || p.is_admin) && (p.pending_requests_count || 0) > 0 && (
                 <span className="inline-block rounded-full bg-destructive/20 px-3 py-0.5 text-xs font-medium text-destructive">
-                  {p.pending_requests_count} solicitacao(oes) pendente(s)
+                  {p.pending_requests_count} solicitação(ões) pendente(s)
                 </span>
               )}
             </div>
@@ -473,17 +603,19 @@ const Index = () => {
               </Link>
             ) : p.my_request_status === "pending" ? (
               <Button className="w-full" disabled>
-                Solicitacao enviada
+                Solicitação enviada
               </Button>
             ) : p.my_request_status === "rejected" ? (
               <Button className="w-full" disabled>
                 Aguardando novo convite do admin
               </Button>
             ) : (
-              <Button className="w-full gap-2" onClick={() => handleRequestJoin(p.id)} disabled={profileRequired}>
-                <UserPlus className="h-4 w-4" />
-                Solicitar entrada
-              </Button>
+              !profileBlocked ? (
+                <Button className="w-full gap-2" onClick={() => handleRequestJoin(p.id)}>
+                  <UserPlus className="h-4 w-4" />
+                  Solicitar entrada
+                </Button>
+              ) : null
             )}
           </div>
         )}
@@ -496,10 +628,40 @@ const Index = () => {
       <header className="border-b border-border bg-card">
         <div className="container mx-auto flex items-center justify-between px-4 py-4">
           <h1 className="font-display text-2xl tracking-wider text-primary sm:text-3xl">PELADA DO FURTO</h1>
-          <Button variant="ghost" onClick={signOut} className="gap-2 text-muted-foreground hover:text-destructive">
-            <LogOut className="h-4 w-4" />
-            <span className="hidden sm:inline">Sair</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Sheet open={notificationsOpen} onOpenChange={setNotificationsOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="icon" className="relative">
+                  <Bell className="h-4 w-4" />
+                  {pendingGlobalCount > 0 && (
+                    <Badge className="absolute -right-2 -top-2 h-5 min-w-5 px-1 text-[10px]">{pendingGlobalCount}</Badge>
+                  )}
+                </Button>
+              </SheetTrigger>
+              <SheetContent>
+                <SheetHeader>
+                  <SheetTitle>Central de notificações</SheetTitle>
+                </SheetHeader>
+                <div className="mt-4 space-y-2">
+                  {notificationEvents.length === 0 && (
+                    <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">Sem eventos recentes.</p>
+                  )}
+                  {notificationEvents.map((event) => (
+                    <div key={event.id} className="rounded-md border border-border bg-card p-3">
+                      <p className="text-sm font-medium text-foreground">{event.peladaTitle}</p>
+                      <p className="text-sm text-muted-foreground">{event.message}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{formatDateTimeBrasilia(event.at)}</p>
+                    </div>
+                  ))}
+                </div>
+              </SheetContent>
+            </Sheet>
+
+            <Button variant="ghost" onClick={signOut} className="gap-2 text-muted-foreground hover:text-destructive">
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sair</span>
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -529,7 +691,7 @@ const Index = () => {
                     <DialogDescription>Defina seu nome e foto. Sem foto, o avatar usa a inicial.</DialogDescription>
                   </DialogHeader>
 
-                  {profileRequired && (
+                  {profileBlocked && (
                     <div className="rounded-md border border-primary/30 bg-primary/10 p-3 text-xs text-primary">
                       Complete seu nome para continuar usando o sistema.
                     </div>
@@ -574,21 +736,22 @@ const Index = () => {
                 </DialogContent>
               </Dialog>
 
-              <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gap-2" disabled={profileRequired || !isSuperAdmin}>
-                    <Plus className="h-4 w-4" />
-                    Nova pelada
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Nova pelada</DialogTitle>
-                    <DialogDescription>Defina data, abertura e configuracoes da pelada.</DialogDescription>
-                  </DialogHeader>
+              {isSuperAdmin && (
+                <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2" disabled={profileBlocked}>
+                      <Plus className="h-4 w-4" />
+                      Nova pelada
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>Nova pelada</DialogTitle>
+                        <DialogDescription>Defina data, abertura e configurações da pelada.</DialogDescription>
+                    </DialogHeader>
 
                   <div className="flex items-center justify-between">
-                    <h3 className="font-display text-lg text-foreground">Configuracao</h3>
+                    <h3 className="font-display text-lg text-foreground">Configuração</h3>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -604,7 +767,7 @@ const Index = () => {
                     <div className="space-y-3 rounded-md border border-border bg-secondary/50 p-4">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">Titulo</label>
+                          <label className="mb-1 block text-xs text-muted-foreground">Título</label>
                           <Input
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
@@ -614,15 +777,15 @@ const Index = () => {
                         <div>
                           <label className="mb-1 block text-xs text-muted-foreground">Local</label>
                           <Input
-                            value={location}
-                            onChange={(e) => setLocation(e.target.value)}
+                            value={peladaLocation}
+                            onChange={(e) => setPeladaLocation(e.target.value)}
                             className="border-border bg-secondary"
                           />
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-3">
                         <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">Horario</label>
+                          <label className="mb-1 block text-xs text-muted-foreground">Horário</label>
                           <Input
                             value={time}
                             onChange={(e) => setTime(e.target.value)}
@@ -689,7 +852,7 @@ const Index = () => {
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm text-muted-foreground">Abertura das confirmacoes</label>
+                      <label className="mb-1 block text-sm text-muted-foreground">Abertura das confirmações</label>
                       <Input
                         type="datetime-local"
                         value={openAt}
@@ -699,18 +862,32 @@ const Index = () => {
                     </div>
                   </div>
 
-                  <div className="flex justify-end">
-                    <Button onClick={handleCreate} className="gap-2" disabled={profileRequired || !isSuperAdmin}>
-                      <Plus className="h-4 w-4" /> Criar
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
+                    <div className="flex justify-end">
+                      <Button onClick={handleCreate} className="gap-2" disabled={profileBlocked}>
+                        <Plus className="h-4 w-4" /> Criar
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
             </div>
           </div>
 
-          {profileRequired && (
-            <p className="mt-3 text-xs text-destructive">Salve seu nome no perfil para criar pelada e solicitar entrada.</p>
+          <div className="mt-4 rounded-md border border-border bg-secondary/30 p-3">
+            <p className="text-sm font-medium text-foreground">
+              Onboarding {isSuperAdmin ? "(admin)" : "(membro)"}: {onboardingDoneCount}/{onboardingItems.length}
+            </p>
+            <div className="mt-2 space-y-1">
+              {onboardingItems.map((item) => (
+                <p key={item.key} className={`text-xs ${item.done ? "text-primary" : "text-muted-foreground"}`}>
+                  {item.done ? "[OK]" : "[ ]"} {item.label}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          {profileBlocked && (
+            <p className="mt-3 text-xs text-destructive">Salve seu nome no perfil para continuar usando o sistema.</p>
           )}
 
           {!isSuperAdmin && (
