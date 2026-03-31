@@ -6,6 +6,9 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Navigate, useLocation } from "react-router-dom";
 
+const AUTH_REDIRECT_BASE_URL =
+  import.meta.env.VITE_AUTH_REDIRECT_URL?.replace(/\/$/, "") ?? window.location.origin;
+
 const Auth = () => {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -31,7 +34,7 @@ const Auth = () => {
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: window.location.origin },
+        options: { emailRedirectTo: AUTH_REDIRECT_BASE_URL },
       });
       if (error) toast.error(error.message);
       else toast.success("Conta criada! Verifique seu e-mail para confirmar.");
@@ -43,7 +46,7 @@ const Auth = () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth?next=${encodeURIComponent(redirectTo)}`,
+        redirectTo: `${AUTH_REDIRECT_BASE_URL}/auth?next=${encodeURIComponent(redirectTo)}`,
       },
     });
 
