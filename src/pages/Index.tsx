@@ -385,7 +385,8 @@ const Index = () => {
     });
 
     if (error) {
-      toast.error("Erro ao criar pelada");
+      console.error("Erro ao criar pelada:", error);
+      toast.error(`Erro ao criar pelada: ${error.message}`);
       return;
     }
 
