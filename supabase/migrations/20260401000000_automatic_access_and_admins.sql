@@ -107,16 +107,16 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  -- Add all automatic members to this new pelada with pending status (they need to confirm)
-  INSERT INTO public.pelada_members (pelada_id, user_id, member_name, status, is_automatic_entry)
+  -- Add all automatic members to this new pelada (they still need to confirm)
+  INSERT INTO public.pelada_members (pelada_id, user_id, member_name, is_automatic_entry)
   SELECT 
     NEW.id,
     pam.user_id,
     COALESCE(up.display_name, 'Membro'),
-    'pending',
     true
   FROM public.pelada_automatic_members pam
   LEFT JOIN public.user_profiles up ON up.user_id = pam.user_id
+  WHERE pam.user_id <> NEW.user_id
   ON CONFLICT (pelada_id, user_id) DO NOTHING;
 
   -- Add all automatic admins as delegated admins to this new pelada
