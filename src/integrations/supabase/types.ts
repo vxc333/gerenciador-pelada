@@ -147,11 +147,51 @@ export type Database = {
           },
         ]
       }
+      pelada_automatic_members: {
+        Row: {
+          id: string
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      pelada_automatic_admins: {
+        Row: {
+          id: string
+          user_id: string
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          created_at?: string
+          created_by?: string | null
+        }
+        Relationships: []
+      }
       pelada_members: {
         Row: {
           admin_selected: boolean | null
           created_at: string
           id: string
+          is_automatic_entry: boolean
           is_waiting: boolean
           is_goalkeeper: boolean
           member_avatar_url: string | null
@@ -165,6 +205,7 @@ export type Database = {
           admin_selected?: boolean | null
           created_at?: string
           id?: string
+          is_automatic_entry?: boolean
           is_waiting?: boolean
           is_goalkeeper?: boolean
           member_avatar_url?: string | null
@@ -178,6 +219,7 @@ export type Database = {
           admin_selected?: boolean | null
           created_at?: string
           id?: string
+          is_automatic_entry?: boolean
           is_waiting?: boolean
           is_goalkeeper?: boolean
           member_avatar_url?: string | null

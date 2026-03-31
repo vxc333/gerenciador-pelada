@@ -173,12 +173,13 @@ const Index = () => {
       return;
     }
 
-    const [{ data: myRequests }, { data: myMemberships }, { data: myAdminRows }, { data: profileData }, { data: superAdminRow }] = await Promise.all([
+    const [{ data: myRequests }, { data: myMemberships }, { data: myAdminRows }, { data: profileData }, { data: superAdminRow }, { data: autoMemberRow }] = await Promise.all([
       supabase.from("pelada_join_requests").select("pelada_id, status").eq("user_id", user.id),
       supabase.from("pelada_members").select("pelada_id").eq("user_id", user.id),
       supabase.from("pelada_admins").select("pelada_id").eq("user_id", user.id),
       supabase.from("user_profiles").select("display_name, avatar_url").eq("user_id", user.id).maybeSingle(),
       supabase.from("app_super_admins").select("user_id").eq("user_id", user.id).maybeSingle(),
+      supabase.from("pelada_automatic_members").select("id").eq("user_id", user.id).maybeSingle(),
     ]);
 
     const profile = profileData as UserProfile | null;
@@ -189,6 +190,8 @@ const Index = () => {
     setAvatarUrl(profile?.avatar_url || "");
     setProfileLoaded(true);
     setIsSuperAdmin(!!superAdminRow);
+
+    const isAutoMember = !!autoMemberRow;
 
     const requestStatusByPelada = new Map<string, JoinRequestStatus>();
     (myRequests || []).forEach((row) => {
@@ -240,7 +243,7 @@ const Index = () => {
       const delegatedAdmin = delegatedAdminPeladaIds.has(pelada.id);
       const isAdmin = delegatedAdmin || pelada.user_id === user.id;
       const requestStatus = requestStatusByPelada.get(pelada.id) || null;
-      const isMember = memberPeladaIds.has(pelada.id) || requestStatus === "approved";
+      const isMember = memberPeladaIds.has(pelada.id) || requestStatus === "approved" || isAutoMember;
 
       return {
         ...pelada,

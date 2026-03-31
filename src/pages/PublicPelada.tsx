@@ -61,6 +61,7 @@ const PublicPelada = () => {
   const [myJoinRequest, setMyJoinRequest] = useState<JoinRequestRow | null>(null);
   const [myProfile, setMyProfile] = useState<UserProfileRow | null>(null);
   const [isDelegatedAdmin, setIsDelegatedAdmin] = useState(false);
+  const [isAutomaticMember, setIsAutomaticMember] = useState(false);
   const [isBanned, setIsBanned] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [rules, setRules] = useState(getPeladaRules(""));
@@ -93,7 +94,7 @@ const PublicPelada = () => {
       .order("created_at", { ascending: true });
 
     if (user) {
-      const [{ data: requestData }, { data: delegatedAdminRow }, { data: banRow }, { data: profileData }] = await Promise.all([
+      const [{ data: requestData }, { data: delegatedAdminRow }, { data: banRow }, { data: profileData }, { data: autoMemberRow }] = await Promise.all([
         supabase.from("pelada_join_requests").select("*").eq("pelada_id", id).eq("user_id", user.id).maybeSingle(),
         supabase.from("pelada_admins").select("id").eq("pelada_id", id).eq("user_id", user.id).maybeSingle(),
         supabase
@@ -104,15 +105,18 @@ const PublicPelada = () => {
           .gt("expires_at", new Date().toISOString())
           .maybeSingle(),
         supabase.from("user_profiles").select("*").eq("user_id", user.id).maybeSingle(),
+        supabase.from("pelada_automatic_members").select("id").eq("user_id", user.id).maybeSingle(),
       ]);
 
       setMyJoinRequest(requestData || null);
       setIsDelegatedAdmin(!!delegatedAdminRow);
+      setIsAutomaticMember(!!autoMemberRow);
       setIsBanned(!!banRow);
       setMyProfile(profileData || null);
     } else {
       setMyJoinRequest(null);
       setIsDelegatedAdmin(false);
+      setIsAutomaticMember(false);
       setIsBanned(false);
       setMyProfile(null);
     }
@@ -145,7 +149,7 @@ const PublicPelada = () => {
   const myMember = useMemo(() => members.find((m) => m.user_id === user?.id), [members, user?.id]);
   const isAdmin = !!user && !!pelada && (pelada.user_id === user.id || isDelegatedAdmin);
   const approvedMember = myJoinRequest?.status === "approved";
-  const canAccessPelada = !isBanned && (isAdmin || approvedMember);
+  const canAccessPelada = !isBanned && (isAdmin || approvedMember || isAutomaticMember);
   const profileHasName = !!myProfile?.display_name?.trim();
   const confirmationsOpen = !!pelada && new Date() >= new Date(pelada.confirmations_open_at);
   const canConfirm = canAccessPelada && (isAdmin || confirmationsOpen);
