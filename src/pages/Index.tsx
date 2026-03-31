@@ -552,6 +552,7 @@ const Index = () => {
       ];
 
   const onboardingDoneCount = onboardingItems.filter((item) => item.done).length;
+  const shouldShowOnboarding = onboardingDoneCount < onboardingItems.length;
 
   const renderPeladaCard = (p: PeladaCard, options?: { showAdminActions?: boolean; availableCard?: boolean }) => {
     const showAdminActions = options?.showAdminActions ?? false;
@@ -933,18 +934,20 @@ const Index = () => {
             </div>
           </div>
 
-          <div className="mt-4 rounded-md border border-border bg-secondary/30 p-3">
-            <p className="text-sm font-medium text-foreground">
-              Onboarding {isSuperAdmin ? "(admin)" : "(membro)"}: {onboardingDoneCount}/{onboardingItems.length}
-            </p>
-            <div className="mt-2 space-y-1">
-              {onboardingItems.map((item) => (
-                <p key={item.key} className={`text-xs ${item.done ? "text-primary" : "text-muted-foreground"}`}>
-                  {item.done ? "[OK]" : "[ ]"} {item.label}
-                </p>
-              ))}
+          {shouldShowOnboarding && (
+            <div className="mt-4 rounded-md border border-border bg-secondary/30 p-3">
+              <p className="text-sm font-medium text-foreground">
+                Onboarding {isSuperAdmin ? "(admin)" : "(membro)"}: {onboardingDoneCount}/{onboardingItems.length}
+              </p>
+              <div className="mt-2 space-y-1">
+                {onboardingItems.map((item) => (
+                  <p key={item.key} className={`text-xs ${item.done ? "text-primary" : "text-muted-foreground"}`}>
+                    {item.done ? "[OK]" : "[ ]"} {item.label}
+                  </p>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {profileBlocked && (
             <p className="mt-3 text-xs text-destructive">Salve seu nome no perfil para continuar usando o sistema.</p>
