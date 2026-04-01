@@ -1017,7 +1017,7 @@ const Index = () => {
                             </p>
                           </div>
                           <div className="rounded-md bg-primary/20 px-2 py-1 text-xs font-medium text-primary">
-                            {pelada.confirmed ? "✅ Confirmou" : "❌ Não compareceu"}
+                            {pelada.confirmed ? "Confirmou" : "Nao compareceu"}
                           </div>
                         </div>
                       );

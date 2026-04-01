@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { Shield, Trash2 } from "lucide-react";
+import { Shield, Trash2, ArrowLeft } from "lucide-react";
 import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia } from "@/lib/datetime-br";
 import { getPeladaRules } from "@/lib/pelada-rules";
 import type { Json, Tables } from "@/integrations/supabase/types";
@@ -57,6 +57,7 @@ const PublicPelada = () => {
   const [guests, setGuests] = useState<GuestRow[]>([]);
   const [memberName, setMemberName] = useState("");
   const [guestName, setGuestName] = useState("");
+  const [isGuestGoalkeeper, setIsGuestGoalkeeper] = useState(false);
   const [isGoalkeeper, setIsGoalkeeper] = useState(false);
   const [myJoinRequest, setMyJoinRequest] = useState<JoinRequestRow | null>(null);
   const [myProfile, setMyProfile] = useState<UserProfileRow | null>(null);
@@ -295,10 +296,12 @@ const PublicPelada = () => {
       return;
     }
 
+    const finalGuestName = isGuestGoalkeeper ? `${trimmed} (goleiro)` : trimmed;
+
     const { error } = await supabase.from("pelada_member_guests").insert({
       pelada_id: pelada.id,
       pelada_member_id: myMember.id,
-      guest_name: trimmed,
+      guest_name: finalGuestName,
     });
 
     if (error) {
@@ -307,6 +310,7 @@ const PublicPelada = () => {
     }
 
     setGuestName("");
+    setIsGuestGoalkeeper(false);
     toast.success("Convidado adicionado");
     fetchAll();
   };
@@ -407,10 +411,19 @@ const PublicPelada = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="border-b border-border bg-card px-4 py-6 text-center">
-        <h1 className="font-display text-2xl tracking-wider text-primary sm:text-3xl">{pelada.title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{pelada.location} - {pelada.time}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{formatGameDate()}</p>
+      <div className="border-b border-border bg-card px-4 py-6">
+        <div className="container mx-auto flex max-w-md items-center gap-3">
+          <Link to="/">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div className="flex-1 text-center">
+            <h1 className="font-display text-2xl tracking-wider text-primary sm:text-3xl">{pelada.title}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">{pelada.location} - {pelada.time}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{formatGameDate()}</p>
+          </div>
+        </div>
       </div>
 
       <main className="container mx-auto max-w-md space-y-5 px-4 py-5">
@@ -522,6 +535,12 @@ const PublicPelada = () => {
             <Button onClick={handleAddGuest} disabled={!myMember || (!canConfirm && !isAdmin) || isBanned}>
               Adicionar
             </Button>
+          </div>
+          <div className="mb-3 flex items-center gap-2">
+            <Checkbox id="guest-goalkeeper" checked={isGuestGoalkeeper} onCheckedChange={(checked) => setIsGuestGoalkeeper(!!checked)} />
+            <label htmlFor="guest-goalkeeper" className="flex cursor-pointer items-center gap-1 text-sm text-muted-foreground">
+              <Shield className="h-3.5 w-3.5" /> Convidado goleiro
+            </label>
           </div>
           {!myMember && <p className="text-xs text-muted-foreground">Confirme sua presença para liberar convidados.</p>}
         </div>

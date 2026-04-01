@@ -91,29 +91,29 @@ function generateBadges(total: number, confirmationRate: number, noShow: number)
   if (total >= 100) {
     badges.push({
       id: "veteran",
-      label: "🎖️ Veterano",
-      icon: "🎖️",
+      label: "Veterano",
+      icon: "",
       description: "100+ peladas jogadas",
     });
   } else if (total >= 50) {
     badges.push({
       id: "enthusiast",
-      label: "🔥 Entusiasta",
-      icon: "🔥",
+      label: "Entusiasta",
+      icon: "",
       description: "50+ peladas jogadas",
     });
   } else if (total >= 10) {
     badges.push({
       id: "regular",
-      label: "⭐ Regular",
-      icon: "⭐",
+      label: "Regular",
+      icon: "",
       description: "10+ peladas jogadas",
     });
   } else if (total >= 5) {
     badges.push({
       id: "participant",
-      label: "👟 Participante",
-      icon: "👟",
+      label: "Participante",
+      icon: "",
       description: "5+ peladas jogadas",
     });
   }
@@ -122,22 +122,22 @@ function generateBadges(total: number, confirmationRate: number, noShow: number)
   if (confirmationRate === 100 && total >= 5) {
     badges.push({
       id: "reliable",
-      label: "✅ 100% Confiável",
-      icon: "✅",
+      label: "100% Confiavel",
+      icon: "",
       description: "100% de confirmação",
     });
   } else if (confirmationRate >= 90 && total >= 10) {
     badges.push({
       id: "dependable",
-      label: "👌 Responsável",
-      icon: "👌",
+      label: "Responsavel",
+      icon: "",
       description: "90%+ de confirmação",
     });
   } else if (confirmationRate >= 80 && total >= 5) {
     badges.push({
       id: "committed",
-      label: "💪 Comprometido",
-      icon: "💪",
+      label: "Comprometido",
+      icon: "",
       description: "80%+ de confirmação",
     });
   }
@@ -146,8 +146,8 @@ function generateBadges(total: number, confirmationRate: number, noShow: number)
   if (noShow >= 5 && confirmationRate < 50) {
     badges.push({
       id: "unreliable",
-      label: "⚠️ Pouco Confiável",
-      icon: "⚠️",
+      label: "Pouco Confiavel",
+      icon: "",
       description: "Muitos no-shows",
     });
   }

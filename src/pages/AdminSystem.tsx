@@ -328,7 +328,7 @@ const AdminSystem = () => {
 
         {/* Info Box */}
         <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
-          <h3 className="mb-2 font-semibold text-foreground">ℹ️ Como funciona?</h3>
+          <h3 className="mb-2 font-semibold text-foreground">Como funciona?</h3>
           <ul className="space-y-2 text-xs text-muted-foreground">
             <li>
               <strong>Acesso Automático:</strong> Quando um membro é aprovado em uma pelada, ele entra automaticamente nesta lista e passa a entrar automaticamente em todas as novas peladas.

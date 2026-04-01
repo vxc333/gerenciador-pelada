@@ -77,6 +77,14 @@ const AdminPelada = () => {
   const [banDaysByUser, setBanDaysByUser] = useState<Record<string, number>>({});
   const [notFound, setNotFound] = useState(false);
   const [forbidden, setForbidden] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editMaxPlayers, setEditMaxPlayers] = useState(0);
+  const [editMaxGk, setEditMaxGk] = useState(0);
+  const [editNumTeams, setEditNumTeams] = useState(2);
+  const [editPlayersPerTeam, setEditPlayersPerTeam] = useState(10);
   const [rules, setRules] = useState<PeladaRules>({
     autoConfirmAdmins: true,
     maxGuestsPerMember: 3,
@@ -117,6 +125,14 @@ const AdminPelada = () => {
     setListPriorityMode(p.list_priority_mode);
     setGuestPriorityMode(p.guest_priority_mode);
     setDelegatedAdmins(safeAdminRows);
+    setEditTitle(p.title);
+    setEditLocation(p.location);
+    setEditTime(p.time);
+    setEditDate(p.date);
+    setEditMaxPlayers(p.max_players);
+    setEditMaxGk(p.max_goalkeepers);
+    setEditNumTeams(p.num_teams);
+    setEditPlayersPerTeam(p.players_per_team);
 
     const [{ data: membersData }, { data: guestsData }, { data: requestsData }, { data: bansData }] = await Promise.all([
       supabase.from("pelada_members").select("*").eq("pelada_id", id).order("created_at", { ascending: true }),
@@ -365,6 +381,32 @@ const AdminPelada = () => {
     toast.success("Link copiado!");
   };
 
+  const savePeladaDetails = async () => {
+    const totalPlayers = editNumTeams * editPlayersPerTeam;
+
+    const { error } = await supabase
+      .from("peladas")
+      .update({
+        title: editTitle.trim(),
+        location: editLocation.trim(),
+        time: editTime.trim(),
+        date: editDate,
+        max_players: totalPlayers,
+        max_goalkeepers: editMaxGk,
+        num_teams: editNumTeams,
+        players_per_team: editPlayersPerTeam,
+      })
+      .eq("id", pelada.id);
+
+    if (error) {
+      toast.error("Não foi possível salvar os dados da pelada");
+      return;
+    }
+
+    toast.success("Dados da pelada atualizados");
+    fetchAll();
+  };
+
   const saveOpenAt = async () => {
     const openAtIso = fromBrasiliaDateTimeLocalInput(openAt);
 
@@ -611,6 +653,50 @@ const AdminPelada = () => {
           <Button onClick={handleDraw} className="flex-1 gap-2 text-sm" disabled={!!pelada.draw_done_at}>
             <Shuffle className="h-4 w-4" /> {pelada.draw_done_at ? "Sorteio finalizado" : "Fazer sorteio"}
           </Button>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-2 font-display text-lg text-foreground">EDITAR PELADA</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Altere os dados principais da pelada.</p>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Titulo</label>
+                <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="border-border bg-secondary" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Local</label>
+                <Input value={editLocation} onChange={(e) => setEditLocation(e.target.value)} className="border-border bg-secondary" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Data</label>
+                <Input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="border-border bg-secondary" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Horario</label>
+                <Input value={editTime} onChange={(e) => setEditTime(e.target.value)} className="border-border bg-secondary" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Qtd Times</label>
+                <Input type="number" min={2} max={10} value={editNumTeams} onChange={(e) => setEditNumTeams(Number(e.target.value))} className="border-border bg-secondary" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Por time</label>
+                <Input type="number" min={3} max={20} value={editPlayersPerTeam} onChange={(e) => setEditPlayersPerTeam(Number(e.target.value))} className="border-border bg-secondary" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Max Goleiros</label>
+                <Input type="number" min={1} max={10} value={editMaxGk} onChange={(e) => setEditMaxGk(Number(e.target.value))} className="border-border bg-secondary" />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={savePeladaDetails}>Salvar dados</Button>
+            </div>
+          </div>
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
