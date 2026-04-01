@@ -359,7 +359,6 @@ const Index = () => {
 
   const handleCreate = async () => {
     if (!isSuperAdmin) {
-      toast.error("Somente admin supremo pode criar peladas");
       return;
     }
 
@@ -955,10 +954,6 @@ const Index = () => {
 
           {profileBlocked && (
             <p className="mt-3 text-xs text-destructive">Salve seu nome no perfil para continuar usando o sistema.</p>
-          )}
-
-          {!isSuperAdmin && (
-            <p className="mt-3 text-xs text-muted-foreground">Somente admin supremo pode criar novas peladas.</p>
           )}
         </div>
 

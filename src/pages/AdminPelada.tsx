@@ -457,7 +457,6 @@ const AdminPelada = () => {
 
   const grantDelegatedAdmin = async (targetUserId: string) => {
     if (!isSuperAdmin) {
-      toast.error("Somente admin supremo pode delegar admins");
       return;
     }
 
@@ -487,7 +486,6 @@ const AdminPelada = () => {
 
   const revokeDelegatedAdmin = async (targetUserId: string) => {
     if (!isSuperAdmin) {
-      toast.error("Somente admin supremo pode remover admins delegados");
       return;
     }
 
@@ -855,10 +853,6 @@ const AdminPelada = () => {
 
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-3 font-display text-lg text-foreground">ADMINS DELEGADOS</h2>
-          <p className="mb-3 text-xs text-muted-foreground">
-            O dono da pelada é sempre admin. Somente admin supremo pode promover ou remover admins delegados.
-            Usuários aprovados na entrada já podem virar admin, mesmo antes da confirmação de presença.
-          </p>
 
           <div className="space-y-2">
             {adminCandidates.map((candidate) => {
