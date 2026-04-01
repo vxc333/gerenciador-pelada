@@ -102,7 +102,7 @@ const Index = () => {
   const [maxGk, setMaxGk] = useState(3);
   const [title, setTitle] = useState("PELADA DO FURTO");
   const [peladaLocation, setPeladaLocation] = useState("IFMA");
-  const [time, setTime] = useState("19 H");
+  const [time, setTime] = useState("20 H");
   const [fetching, setFetching] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [profileName, setProfileName] = useState("");

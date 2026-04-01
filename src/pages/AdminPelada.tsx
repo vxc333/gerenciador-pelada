@@ -83,8 +83,8 @@ const AdminPelada = () => {
   const [editDate, setEditDate] = useState("");
   const [editMaxPlayers, setEditMaxPlayers] = useState(0);
   const [editMaxGk, setEditMaxGk] = useState(0);
-  const [editNumTeams, setEditNumTeams] = useState(2);
-  const [editPlayersPerTeam, setEditPlayersPerTeam] = useState(10);
+  const [editNumTeams, setEditNumTeams] = useState(5);
+  const [editPlayersPerTeam, setEditPlayersPerTeam] = useState(4);
   const [rules, setRules] = useState<PeladaRules>({
     autoConfirmAdmins: true,
     maxGuestsPerMember: 3,
