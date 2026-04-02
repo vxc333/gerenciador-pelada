@@ -62,6 +62,18 @@ const shuffle = <T,>(arr: T[]) => {
   return copy;
 };
 
+function normalizeTimeForInput(time?: string) {
+  if (!time) return "12:00";
+  if (typeof time !== "string") return "12:00";
+  const hhmmMatch = time.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (hhmmMatch) {
+    return `${hhmmMatch[1].padStart(2, "0")}:${hhmmMatch[2]}`;
+  }
+  const numMatch = time.match(/(\d{1,2})/);
+  if (numMatch) return `${numMatch[1].padStart(2, "0")}:00`;
+  return "12:00";
+}
+
 const AdminPelada = () => {
   const { id } = useParams<{ id: string }>();
   const { user, loading, profileChecked, hasProfileName } = useAuth();
@@ -134,7 +146,7 @@ const AdminPelada = () => {
     setDelegatedAdmins(safeAdminRows);
     setEditTitle(p.title);
     setEditLocation(p.location);
-    setEditTime(p.time);
+    setEditTime(normalizeTimeForInput(p.time));
     setEditDate(p.date);
     setEditMaxPlayers(p.max_players);
     setEditMaxGk(p.max_goalkeepers);
@@ -748,7 +760,7 @@ const AdminPelada = () => {
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-display text-xl text-primary sm:text-2xl">{pelada.title}</h1>
             <p className="truncate text-xs text-muted-foreground sm:text-sm">
-              {pelada.location} - {pelada.time} - {formatGameDate()}
+              {pelada.location} • Horário: {pelada.time} • {formatGameDate()}
             </p>
           </div>
         </div>
@@ -818,7 +830,7 @@ const AdminPelada = () => {
               </div>
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">Horario</label>
-                <Input value={editTime} onChange={(e) => setEditTime(e.target.value)} className="border-border bg-secondary" />
+                <Input type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} className="border-border bg-secondary" />
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

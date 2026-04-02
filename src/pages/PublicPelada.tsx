@@ -448,7 +448,7 @@ const PublicPelada = () => {
           </Link>
           <div className="flex-1 text-center">
             <h1 className="font-display text-2xl tracking-wider text-primary sm:text-3xl">{pelada.title}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">{pelada.location} - {pelada.time}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{pelada.location} • Horário: {pelada.time}</p>
             <p className="mt-1 text-xs text-muted-foreground">{formatGameDate()}</p>
           </div>
           {isAdmin && (

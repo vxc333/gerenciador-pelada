@@ -108,7 +108,8 @@ const Index = () => {
     const [maxGk, setMaxGk] = useState(3);
     const [title, setTitle] = useState("PELADA DO FURTO");
     const [peladaLocation, setPeladaLocation] = useState("IFMA");
-    const [time, setTime] = useState("20 H");
+    // hora no formato HH:mm para input type=time
+    const [time, setTime] = useState("20:00");
     const [fetching, setFetching] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
     const [profileName, setProfileName] = useState("");
@@ -857,7 +858,7 @@ const Index = () => {
                                 {formatDate(p.date)}
                             </span>
                             <span>{p.location}</span>
-                            <span>{p.time}</span>
+                            <span>Horário: {p.time}</span>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2">
                             <span className="inline-block rounded-full bg-primary/20 px-3 py-0.5 text-xs font-medium text-primary">
