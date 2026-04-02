@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Shield, Trash2, ArrowLeft } from "lucide-react";
 import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia } from "@/lib/datetime-br";
+import { buildOrderedPeladaEntries, sortPeladaMembers } from "@/lib/pelada-participants";
 import { getPeladaRules } from "@/lib/pelada-rules";
 import type { Json, Tables } from "@/integrations/supabase/types";
 
@@ -162,13 +163,6 @@ const PublicPelada = () => {
     !!pelada &&
     !confirmationsOpen &&
     new Date(pelada.confirmations_open_at).getTime() - Date.now() <= rules.progressiveWarningHours * 60 * 60 * 1000;
-
-  const memberCapacity = pelada?.max_players || 0;
-  const gkCapacity = pelada?.max_goalkeepers || 0;
-
-  const memberCount = members.filter((m) => !m.is_goalkeeper && !m.is_waiting).length;
-  const gkCount = members.filter((m) => m.is_goalkeeper && !m.is_waiting).length;
-  const waitingMembers = members.filter((m) => m.is_waiting);
 
   const getInitialMemberName = useCallback(() => {
     const fromProfile = myProfile?.display_name?.trim();
@@ -375,49 +369,26 @@ const PublicPelada = () => {
 
   const sortedMembers = useMemo(() => {
     if (!pelada) return [];
-    return [...members].sort((a, b) => {
-      if (pelada.list_priority_mode === "member_priority") {
-        if (b.priority_score !== a.priority_score) return b.priority_score - a.priority_score;
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      }
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
+    return sortPeladaMembers(members, pelada.list_priority_mode);
   }, [members, pelada]);
 
-  const waitingOrder = useMemo(() => {
-    if (!waitingMembers) return [];
-    return [...waitingMembers].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  }, [waitingMembers]);
+  const orderedListEntries = useMemo(() => {
+    if (!pelada) return [];
+    return buildOrderedPeladaEntries(pelada, members, guests);
+  }, [guests, members, pelada]);
+
+  const memberCapacity = pelada?.max_players || 0;
+  const gkCapacity = pelada?.max_goalkeepers || 0;
+
+  const memberCount = orderedListEntries.filter((entry) => !entry.isGoalkeeper && !entry.isWaiting).length;
+  const gkCount = orderedListEntries.filter((entry) => entry.isGoalkeeper && !entry.isWaiting).length;
+  const waitingEntries = useMemo(() => orderedListEntries.filter((entry) => entry.isWaiting), [orderedListEntries]);
 
   const myWaitingPosition = useMemo(() => {
     if (!myMember?.is_waiting) return 0;
-    return waitingOrder.findIndex((member) => member.id === myMember.id) + 1;
-  }, [myMember?.is_waiting, myMember?.id, waitingOrder]);
-
-  const orderedGuestEntries = useMemo(() => {
-    if (!pelada) return [];
-    
-    const ordered = [...guests];
-
-    if (pelada.guest_priority_mode === "guest_added_order") {
-      ordered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      return ordered;
-    }
-
-    const memberOrder = new Map<string, number>();
-    sortedMembers.forEach((member, index) => {
-      memberOrder.set(member.id, index);
-    });
-
-    ordered.sort((a, b) => {
-      const orderA = memberOrder.get(a.pelada_member_id) ?? Number.MAX_SAFE_INTEGER;
-      const orderB = memberOrder.get(b.pelada_member_id) ?? Number.MAX_SAFE_INTEGER;
-      if (orderA !== orderB) return orderA - orderB;
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
-
-    return ordered;
-  }, [guests, pelada, sortedMembers]);
+    const waitingQueue = waitingEntries.filter((entry) => entry.isGoalkeeper === myMember.is_goalkeeper);
+    return waitingQueue.findIndex((entry) => entry.kind === "member" && entry.member.id === myMember.id) + 1;
+  }, [myMember, waitingEntries]);
 
   if (loading || !profileChecked) return null;
   if (!user) return <Navigate to={`/auth?next=${encodeURIComponent(`/pelada/${id}`)}`} replace />;
@@ -590,78 +561,78 @@ const PublicPelada = () => {
           <div className="mb-2 flex gap-2 text-xs">
             <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary">Jogadores: {memberCount}/{memberCapacity}</span>
             <span className="rounded-full bg-accent/20 px-2 py-0.5 text-accent">Goleiros: {gkCount}/{gkCapacity}</span>
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-foreground">Convidados: {orderedGuestEntries.length}</span>
+            <span className="rounded-full bg-secondary px-2 py-0.5 text-foreground">Convidados: {guests.length}</span>
           </div>
           <p className="mb-2 text-xs text-muted-foreground">
-            Ordem dos membros: {pelada.list_priority_mode === "member_priority" ? "prioridade" : "confirmação"} | convidados: {pelada.guest_priority_mode === "guest_added_order" ? "ordem de adição" : "ordem do dono"}
+            Membros e convidados entram na mesma lista. Ordem dos membros: {pelada.list_priority_mode === "member_priority" ? "prioridade" : "confirmação"} | convidados: {pelada.guest_priority_mode === "guest_added_order" ? "ordem de adição" : "junto do responsável"}
           </p>
-          {waitingMembers.length > 0 && (
-            <p className="mb-2 text-xs text-muted-foreground">Lista de espera atual: {waitingMembers.length}</p>
+          {waitingEntries.length > 0 && (
+            <p className="mb-2 text-xs text-muted-foreground">Lista de espera atual: {waitingEntries.length}</p>
           )}
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-md border border-border bg-secondary/30 p-2">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Participantes</p>
-              <div className="space-y-2">
-                {sortedMembers.map((member) => (
-                  <div key={member.id} className="rounded-md border border-border bg-secondary/50 p-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-7 w-7">
-                          <AvatarImage src={member.member_avatar_url || undefined} alt={member.member_name} />
-                          <AvatarFallback className="text-[11px] font-semibold">{getInitial(member.member_name)}</AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm text-foreground">
-                          {member.member_name}
-                          {member.is_goalkeeper ? " (goleiro)" : ""}
-                          {member.is_waiting ? " (espera)" : ""}
-                          {pelada.list_priority_mode === "member_priority" ? ` (prio ${member.priority_score})` : ""}
-                        </span>
-                      </div>
-                      {member.is_waiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
-                    </div>
-                  </div>
-                ))}
-                {sortedMembers.length === 0 && (
-                  <p className="py-3 text-center text-sm text-muted-foreground">Sem participantes confirmados</p>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-md border border-border bg-muted/20 p-2">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Convidados</p>
-              <div className="space-y-2">
-                {orderedGuestEntries.map((guest) => {
-                  const hostMember = members.find((member) => member.id === guest.pelada_member_id);
-                  const canDelete = !!myMember && guest.pelada_member_id === myMember.id;
+          <div className="rounded-md border border-border bg-secondary/30 p-2">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Participantes</p>
+            <div className="space-y-2">
+              {orderedListEntries.map((entry) => {
+                if (entry.kind === "member") {
+                  const member = entry.member;
 
                   return (
-                    <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-xs">
+                    <div key={member.id} className="rounded-md border border-border bg-secondary/50 p-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <Avatar className="h-6 w-6">
-                            <AvatarFallback className="text-[10px] font-semibold">{getInitial(guest.guest_name)}</AvatarFallback>
+                          <Avatar className="h-7 w-7">
+                            <AvatarImage src={member.member_avatar_url || undefined} alt={member.member_name} />
+                            <AvatarFallback className="text-[11px] font-semibold">{getInitial(member.member_name)}</AvatarFallback>
                           </Avatar>
-                          <span className="text-foreground">{guest.guest_name}</span>
+                          <span className="text-sm text-foreground">
+                            {member.member_name}
+                            {entry.isGoalkeeper ? " (goleiro)" : ""}
+                            {entry.isWaiting ? " (espera)" : ""}
+                            {pelada.list_priority_mode === "member_priority" ? ` (prio ${member.priority_score})` : ""}
+                          </span>
                         </div>
+                        {entry.isWaiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
+                      </div>
+                    </div>
+                  );
+                }
+
+                const guest = entry.guest;
+                const canDelete = !!myMember && guest.pelada_member_id === myMember.id;
+
+                return (
+                  <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-6 w-6">
+                          <AvatarFallback className="text-[10px] font-semibold">{getInitial(guest.guest_name)}</AvatarFallback>
+                        </Avatar>
+                        <span className="text-foreground">
+                          {guest.guest_name}
+                          {entry.isWaiting ? " (espera)" : ""}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {entry.isWaiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
                         {canDelete && (
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveGuest(guest.id)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
                       </div>
-                      <p className="mt-1 text-muted-foreground">Responsável: {hostMember?.member_name || "participante removido"}</p>
                     </div>
-                  );
-                })}
-                {orderedGuestEntries.length === 0 && (
-                  <p className="py-3 text-center text-sm text-muted-foreground">Sem convidados</p>
-                )}
-              </div>
+                    <p className="mt-1 text-muted-foreground">Responsável: {entry.hostMember?.member_name || "participante removido"}</p>
+                  </div>
+                );
+              })}
+              {orderedListEntries.length === 0 && (
+                <p className="py-3 text-center text-sm text-muted-foreground">Sem participantes confirmados</p>
+              )}
             </div>
           </div>
 
-          {members.length === 0 && guests.length === 0 && <p className="mt-3 py-3 text-center text-sm text-muted-foreground">Ninguém confirmou ainda</p>}
+          {orderedListEntries.length === 0 && <p className="mt-3 py-3 text-center text-sm text-muted-foreground">Ninguém confirmou ainda</p>}
         </div>
 
         {pelada.draw_done_at && (
