@@ -373,36 +373,7 @@ const PublicPelada = () => {
     fetchAll();
   };
 
-  if (loading || !profileChecked) return null;
-  if (!user) return <Navigate to={`/auth?next=${encodeURIComponent(`/pelada/${id}`)}`} replace />;
-  if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
-
-  if (notFound) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-muted-foreground">Pelada não encontrada</p>
-      </div>
-    );
-  }
-
-  if (!pelada) return null;
-
-  const formatOpenAt = () => {
-    try {
-      return `${formatWeekdayDateTimeBrasilia(pelada.confirmations_open_at)} (horário de Brasília)`;
-    } catch {
-      return pelada.confirmations_open_at;
-    }
-  };
-
-  const formatGameDate = () => {
-    try {
-      return formatDateBrasiliaLong(new Date(`${pelada.date}T12:00:00Z`));
-    } catch {
-      return pelada.date;
-    }
-  };
-
+  // HOOKS MUST BE BEFORE ALL GUARDS - move all useMemo here
   const sortedMembers = useMemo(() => {
     if (!pelada) return [];
     return [...members].sort((a, b) => {
@@ -448,6 +419,36 @@ const PublicPelada = () => {
 
     return ordered;
   }, [guests, pelada, sortedMembers]);
+
+  if (loading || !profileChecked) return null;
+  if (!user) return <Navigate to={`/auth?next=${encodeURIComponent(`/pelada/${id}`)}`} replace />;
+  if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
+
+  if (notFound) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <p className="text-muted-foreground">Pelada não encontrada</p>
+      </div>
+    );
+  }
+
+  if (!pelada) return null;
+
+  const formatOpenAt = () => {
+    try {
+      return `${formatWeekdayDateTimeBrasilia(pelada.confirmations_open_at)} (horário de Brasília)`;
+    } catch {
+      return pelada.confirmations_open_at;
+    }
+  };
+
+  const formatGameDate = () => {
+    try {
+      return formatDateBrasiliaLong(new Date(`${pelada.date}T12:00:00Z`));
+    } catch {
+      return pelada.date;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
