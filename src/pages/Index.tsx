@@ -636,7 +636,7 @@ const Index = () => {
       <div key={p.id} className={cardClassName}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <h3 className={`truncate font-display text-lg ${isNextUpcoming ? 'text-primary font-bold' : 'text-foreground'}`}>{isNextUpcoming && '⭐ '}{p.title}</h3>
+            <h3 className={`truncate font-display text-lg ${isNextUpcoming ? 'text-primary font-bold' : 'text-foreground'}`}>{p.title}</h3>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Calendar className="h-3.5 w-3.5" />
@@ -1188,7 +1188,7 @@ const Index = () => {
           {availablePeladas.length > 0 && (
             <>
               <div className="rounded-lg border-2 border-primary/30 bg-secondary/20 p-2 text-center">
-                <p className="text-xs font-semibold uppercase tracking-wide text-primary">⭐ Próxima pelada</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary">Próxima pelada</p>
               </div>
               {renderPeladaCard(availablePeladas[0], { availableCard: true, isNextUpcoming: true })}
               {availablePeladas.slice(1).map((pelada) => renderPeladaCard(pelada, { availableCard: true }))}

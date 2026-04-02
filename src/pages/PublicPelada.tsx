@@ -250,7 +250,7 @@ const PublicPelada = () => {
 
     const trimmed = isAdmin ? preferredMemberName : memberName.trim();
     if (!trimmed) {
-      toast.error("Informe seu nome no perfil");
+      toast.error("Preencha seu nome para confirmar presença na pelada");
       return;
     }
 
@@ -522,12 +522,18 @@ const PublicPelada = () => {
             </p>
           ) : (
             <div className="mb-3">
+              <label className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+                Seu nome <span className="text-destructive">*</span> obrigatório
+              </label>
               <Input
-                placeholder="Seu nome"
+                placeholder="Digite seu nome"
                 value={memberName}
                 onChange={(e) => setMemberName(e.target.value)}
                 className="border-border bg-secondary"
               />
+              {memberName.length === 0 && (
+                <p className="mt-1 text-xs text-destructive">Nome é obrigatório para confirmar presença</p>
+              )}
             </div>
           )}
 
@@ -539,7 +545,11 @@ const PublicPelada = () => {
           </div>
 
           <div className="flex gap-2">
-            <Button onClick={handleConfirmMe} className="flex-1" disabled={!canConfirm || isBanned}>
+            <Button 
+              onClick={handleConfirmMe} 
+              className="flex-1" 
+              disabled={!canConfirm || isBanned || (!isAdmin && !memberName.trim())}
+            >
               {myMember ? "Atualizar minha confirmação" : "Confirmar presença"}
             </Button>
             {myMember && (

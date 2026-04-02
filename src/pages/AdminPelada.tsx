@@ -755,6 +755,12 @@ const AdminPelada = () => {
       </header>
 
       <main className="container mx-auto max-w-3xl space-y-5 px-4 py-5">
+        <div className="rounded-lg border-2 border-primary/50 bg-primary/5 p-3">
+          <p className="text-sm font-medium text-primary">
+            <strong>Menu de Membros:</strong> Clique em <strong>"Membros"</strong> para gerenciar aprovações, solicitações pendentes e estatísticas dos jogadores.
+          </p>
+        </div>
+
         <div className="flex gap-2">
           <Button variant="secondary" onClick={copyLink} className="flex-1 gap-2 text-sm">
             <LinkIcon className="h-4 w-4" /> Link público
@@ -765,12 +771,22 @@ const AdminPelada = () => {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-3">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <Button variant={activeMenu === "config" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("config")}>Configuração</Button>
-            <Button variant={activeMenu === "membros" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("membros")}>Membros</Button>
-            <Button variant={activeMenu === "lista" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("lista")}>Lista e Aprovações</Button>
-            <Button variant={activeMenu === "historico" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("historico")}>Histórico</Button>
-            <Button variant={activeMenu === "queridometro" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("queridometro")}>Queridômetro</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant={activeMenu === "config" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("config")} className="flex-1 min-w-[100px]">
+              Configuração
+            </Button>
+            <Button variant={activeMenu === "membros" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("membros")} className="flex-1 min-w-[100px]">
+              Membros
+            </Button>
+            <Button variant={activeMenu === "lista" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("lista")} className="flex-1 min-w-[100px]">
+              Aprovações
+            </Button>
+            <Button variant={activeMenu === "historico" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("historico")} className="flex-1 min-w-[100px]">
+              Histórico
+            </Button>
+            <Button variant={activeMenu === "queridometro" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("queridometro")} className="flex-1 min-w-[100px]">
+              Queridômetro
+            </Button>
           </div>
         </div>
 
