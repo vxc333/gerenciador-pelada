@@ -373,7 +373,6 @@ const PublicPelada = () => {
     fetchAll();
   };
 
-  // HOOKS MUST BE BEFORE ALL GUARDS - move all useMemo here
   const sortedMembers = useMemo(() => {
     if (!pelada) return [];
     return [...members].sort((a, b) => {
