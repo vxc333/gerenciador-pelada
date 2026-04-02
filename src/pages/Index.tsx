@@ -576,7 +576,10 @@ const Index = () => {
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <span className="inline-block rounded-full bg-primary/20 px-3 py-0.5 text-xs font-medium text-primary">
-                {p.confirmed_count || 0}/{p.max_players + p.max_goalkeepers} confirmados
+                {p.confirmed_count || 0} confirmados
+              </span>
+              <span className="inline-block rounded-full bg-secondary px-3 py-0.5 text-xs font-medium text-foreground">
+                linha: {p.max_players} | goleiros: {p.max_goalkeepers}
               </span>
               <span className="inline-block rounded-full bg-muted px-3 py-0.5 text-xs font-medium text-muted-foreground">
                 abre {formatOpenAt(p.confirmations_open_at)}

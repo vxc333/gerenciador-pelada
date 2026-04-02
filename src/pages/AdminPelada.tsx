@@ -26,6 +26,7 @@ type PeladaAdminRow = Tables<"pelada_admins">;
 type PeladaBanRow = Tables<"pelada_bans">;
 type UserProfileRow = Tables<"user_profiles">;
 type TimelineEvent = { id: string; message: string; at: string };
+type AdminMenu = "config" | "lista" | "historico" | "queridometro";
 
 const parseDrawResult = (value: Json | null): DrawTeam[] | null => {
   if (!Array.isArray(value)) return null;
@@ -59,6 +60,8 @@ const shuffle = <T,>(arr: T[]) => {
   return copy;
 };
 
+const isGoalkeeperGuestName = (guestName: string) => /\(goleiro\)\s*$/i.test(guestName);
+
 const AdminPelada = () => {
   const { id } = useParams<{ id: string }>();
   const { user, loading, profileChecked, hasProfileName } = useAuth();
@@ -85,9 +88,12 @@ const AdminPelada = () => {
   const [editMaxGk, setEditMaxGk] = useState(0);
   const [editNumTeams, setEditNumTeams] = useState(5);
   const [editPlayersPerTeam, setEditPlayersPerTeam] = useState(4);
+  const [activeMenu, setActiveMenu] = useState<AdminMenu>("config");
+  const [externalGuestName, setExternalGuestName] = useState("");
+  const [externalGuestIsGoalkeeper, setExternalGuestIsGoalkeeper] = useState(false);
   const [rules, setRules] = useState<PeladaRules>({
     autoConfirmAdmins: true,
-    maxGuestsPerMember: 3,
+    maxGuestsPerMember: 7,
     progressiveWarningHours: 24,
   });
 
@@ -263,19 +269,65 @@ const AdminPelada = () => {
     return copy;
   }, [members, listPriorityMode]);
 
+  const getMemberDisplayName = useCallback(
+    (member: MemberRow) => {
+      if (member.admin_selected) return member.member_name;
+      return profilesByUserId[member.user_id]?.display_name || member.member_name;
+    },
+    [profilesByUserId]
+  );
+
+  const flattenedGuestEntries = useMemo(() => {
+    const ordered = [...guests];
+
+    if (guestPriorityMode === "guest_added_order") {
+      ordered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      return ordered;
+    }
+
+    const memberOrder = new Map<string, number>();
+    sortedMembers.forEach((member, index) => {
+      memberOrder.set(member.id, index);
+    });
+
+    ordered.sort((a, b) => {
+      const memberA = memberOrder.get(a.pelada_member_id) ?? Number.MAX_SAFE_INTEGER;
+      const memberB = memberOrder.get(b.pelada_member_id) ?? Number.MAX_SAFE_INTEGER;
+      if (memberA !== memberB) return memberA - memberB;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+
+    return ordered;
+  }, [guestPriorityMode, guests, sortedMembers]);
+
   const eligibleEntries = useMemo(() => {
     const activeMembers = sortedMembers.filter((member) => !member.is_waiting && !member.is_goalkeeper);
+    const activeMemberIds = new Set(activeMembers.map((member) => member.id));
     const names: string[] = [];
 
+    if (guestPriorityMode === "guest_added_order") {
+      activeMembers.forEach((member) => {
+        names.push(getMemberDisplayName(member));
+      });
+
+      flattenedGuestEntries.forEach((guest) => {
+        if (!activeMemberIds.has(guest.pelada_member_id)) return;
+        if (isGoalkeeperGuestName(guest.guest_name)) return;
+        names.push(guest.guest_name);
+      });
+      return names;
+    }
+
     activeMembers.forEach((member) => {
-      names.push(member.member_name);
+      names.push(getMemberDisplayName(member));
       (guestsByMember[member.id] || []).forEach((guest) => {
+        if (isGoalkeeperGuestName(guest.guest_name)) return;
         names.push(guest.guest_name);
       });
     });
 
     return names;
-  }, [guestsByMember, sortedMembers]);
+  }, [flattenedGuestEntries, getMemberDisplayName, guestPriorityMode, guestsByMember, sortedMembers]);
 
   const timelineEvents = useMemo<TimelineEvent[]>(() => {
     if (!pelada) return [];
@@ -533,6 +585,74 @@ const AdminPelada = () => {
     fetchAll();
   };
 
+  const addExternalGuestByAdmin = async () => {
+    const trimmedName = externalGuestName.trim();
+    if (!trimmedName) {
+      toast.error("Informe o nome da pessoa para adicionar");
+      return;
+    }
+
+    let adminMember = members.find((member) => member.user_id === user.id) || null;
+
+    if (!adminMember) {
+      const fallbackAdminName =
+        profilesByUserId[user.id]?.display_name ||
+        (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") ||
+        (user.email ? user.email.split("@")[0] : "Admin");
+
+      const { data: insertedMember, error: insertMemberError } = await supabase
+        .from("pelada_members")
+        .insert({
+          pelada_id: pelada.id,
+          user_id: user.id,
+          member_name: fallbackAdminName,
+          is_goalkeeper: false,
+        })
+        .select("*")
+        .single();
+
+      if (insertMemberError && insertMemberError.code !== "23505") {
+        toast.error("Não foi possível preparar a lista para convidados externos");
+        return;
+      }
+
+      if (insertedMember) {
+        adminMember = insertedMember;
+      } else {
+        const { data: existingAdminMember, error: memberLookupError } = await supabase
+          .from("pelada_members")
+          .select("*")
+          .eq("pelada_id", pelada.id)
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (memberLookupError || !existingAdminMember) {
+          toast.error("Não foi possível localizar seu cadastro para adicionar convidado");
+          return;
+        }
+        adminMember = existingAdminMember;
+      }
+    }
+
+    const finalGuestName = externalGuestIsGoalkeeper ? `${trimmedName} (goleiro)` : trimmedName;
+    const { error } = await supabase.from("pelada_member_guests").insert({
+      pelada_id: pelada.id,
+      pelada_member_id: adminMember.id,
+      guest_name: finalGuestName,
+      admin_selected: true,
+    });
+
+    if (error) {
+      toast.error("Não foi possível adicionar pessoa externa na lista");
+      return;
+    }
+
+    setExternalGuestName("");
+    setExternalGuestIsGoalkeeper(false);
+    toast.success("Pessoa adicionada na lista com sucesso");
+    fetchAll();
+  };
+
   const banUser = async (targetUserId: string) => {
     const days = Math.max(1, Math.floor(banDaysByUser[targetUserId] || 7));
     const expiresAt = new Date();
@@ -625,6 +745,9 @@ const AdminPelada = () => {
     }
   };
 
+  const totalConfiguredPlayers = Math.max(0, editNumTeams) * Math.max(0, editPlayersPerTeam);
+  const totalCurrentConfirmed = members.length + guests.length;
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
@@ -643,7 +766,7 @@ const AdminPelada = () => {
         </div>
       </header>
 
-      <main className="container mx-auto max-w-2xl space-y-5 px-4 py-5">
+      <main className="container mx-auto max-w-3xl space-y-5 px-4 py-5">
         <div className="flex gap-2">
           <Button variant="secondary" onClick={copyLink} className="flex-1 gap-2 text-sm">
             <LinkIcon className="h-4 w-4" /> Link público
@@ -653,11 +776,27 @@ const AdminPelada = () => {
           </Button>
         </div>
 
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Button variant={activeMenu === "config" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("config")}>Configuração</Button>
+            <Button variant={activeMenu === "lista" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("lista")}>Lista e Aprovações</Button>
+            <Button variant={activeMenu === "historico" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("historico")}>Histórico</Button>
+            <Button variant={activeMenu === "queridometro" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("queridometro")}>Queridômetro</Button>
+          </div>
+        </div>
+
+        {activeMenu === "config" && (
+        <>
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-2 font-display text-lg text-foreground">EDITAR PELADA</h2>
-          <p className="mb-3 text-xs text-muted-foreground">Altere os dados principais da pelada.</p>
+          <p className="mb-3 text-xs text-muted-foreground">Altere os dados principais da pelada e valide as vagas totais.</p>
+          <div className="mb-3 grid gap-2 rounded-md border border-border bg-secondary/30 p-3 text-xs text-muted-foreground sm:grid-cols-3">
+            <p>Times: <span className="font-semibold text-foreground">{editNumTeams}</span></p>
+            <p>Jogadores por time: <span className="font-semibold text-foreground">{editPlayersPerTeam}</span></p>
+            <p>Vagas de linha: <span className="font-semibold text-foreground">{totalConfiguredPlayers}</span></p>
+          </div>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">Titulo</label>
                 <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="border-border bg-secondary" />
@@ -667,7 +806,7 @@ const AdminPelada = () => {
                 <Input value={editLocation} onChange={(e) => setEditLocation(e.target.value)} className="border-border bg-secondary" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">Data</label>
                 <Input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="border-border bg-secondary" />
@@ -677,7 +816,7 @@ const AdminPelada = () => {
                 <Input value={editTime} onChange={(e) => setEditTime(e.target.value)} className="border-border bg-secondary" />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">Qtd Times</label>
                 <Input type="number" min={2} max={10} value={editNumTeams} onChange={(e) => setEditNumTeams(Number(e.target.value))} className="border-border bg-secondary" />
@@ -789,10 +928,13 @@ const AdminPelada = () => {
             <Button onClick={saveRules}>Salvar regras</Button>
           </div>
         </div>
+        </>
+        )}
 
+        {activeMenu === "historico" && (
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-display text-lg text-foreground">TIMELINE DE DECISÕES</h2>
+            <h2 className="font-display text-lg text-foreground">HISTÓRICO DE PARTICIPAÇÃO</h2>
             <Button variant="outline" size="sm" className="gap-2" onClick={exportTimelineCsv}>
               <Download className="h-4 w-4" /> Exportar CSV
             </Button>
@@ -811,7 +953,10 @@ const AdminPelada = () => {
             ))}
           </div>
         </div>
+        )}
 
+        {activeMenu === "lista" && (
+        <>
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-3 font-display text-lg text-foreground">SOLICITAÇÕES DE ENTRADA</h2>
           <p className="mb-3 text-xs text-muted-foreground">Admins da pelada aprovam ou recusam. Banidos não podem ser aprovados.</p>
@@ -848,6 +993,31 @@ const AdminPelada = () => {
             {pendingRequests.length === 0 && (
               <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">Sem solicitações pendentes</p>
             )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-2 font-display text-lg text-foreground">ADICIONAR PESSOA EXTERNA (APENAS ADMIN)</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Use para confirmações feitas por fora (ex.: WhatsApp). A pessoa entra na lista normalmente.</p>
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Nome da pessoa</label>
+              <Input
+                value={externalGuestName}
+                onChange={(e) => setExternalGuestName(e.target.value)}
+                placeholder="Ex.: João do IF"
+                className="border-border bg-secondary"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={externalGuestIsGoalkeeper}
+                onChange={(e) => setExternalGuestIsGoalkeeper(e.target.checked)}
+              />
+              Goleiro
+            </label>
+            <Button onClick={addExternalGuestByAdmin}>Adicionar na lista</Button>
           </div>
         </div>
 
@@ -909,14 +1079,18 @@ const AdminPelada = () => {
 
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-3 font-display text-lg text-foreground">SELEÇÃO PARA O JOGO</h2>
-          <p className="mb-3 text-xs text-muted-foreground">Todos fora da espera entram no sorteio automaticamente. Goleiros não entram no sorteio.</p>
+          <p className="mb-3 text-xs text-muted-foreground">Participantes e convidados aparecem na lista. Goleiros não entram no sorteio.</p>
+
+          <div className="mb-3 rounded-md border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
+            Confirmados no total: <span className="font-semibold text-foreground">{totalCurrentConfirmed}</span> | Elegíveis para sorteio: <span className="font-semibold text-foreground">{eligibleEntries.length}</span>
+          </div>
 
           <div className="space-y-2">
             {sortedMembers.map((member) => (
               <div key={member.id} className="rounded-md border border-border bg-secondary/40 p-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-foreground">
-                    {profilesByUserId[member.user_id]?.display_name || member.member_name}
+                    {getMemberDisplayName(member)}
                     {member.is_goalkeeper ? " (goleiro)" : ""}
                     {member.is_waiting ? " (espera)" : ""}
                     {bannedUserIds.has(member.user_id) ? " (banido)" : ""}
@@ -962,32 +1136,47 @@ const AdminPelada = () => {
                     </Button>
                   </div>
                 </div>
-
-                {(guestsByMember[member.id] || []).map((guest) => (
-                  <div
-                    key={guest.id}
-                    className="mt-2 flex items-center justify-between rounded bg-muted/50 px-2 py-1 text-xs"
-                  >
-                    <span>
-                      {guest.guest_name} (convidado de {profilesByUserId[member.user_id]?.display_name || member.member_name})
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteGuest(guest.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
               </div>
             ))}
 
-            {members.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Sem confirmações ainda</p>}
-          </div>
+            {flattenedGuestEntries.map((guest) => {
+              const guestMember = members.find((member) => member.id === guest.pelada_member_id);
+              return (
+                <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-foreground">
+                      {guest.guest_name}
+                      {guest.admin_selected ? " (externo via admin)" : " (convidado)"}
+                    </span>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteGuest(guest.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Vinculado a: {guestMember ? getMemberDisplayName(guestMember) : "participante removido"}
+                  </p>
+                </div>
+              );
+            })}
 
-          <div className="mt-4 rounded-md bg-muted p-3 text-xs text-muted-foreground">
-            Elegíveis para sorteio: {eligibleEntries.length}
+            {members.length === 0 && guests.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Sem confirmações ainda</p>}
           </div>
         </div>
+        </>
+        )}
+
+        {activeMenu === "queridometro" && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-2 font-display text-lg text-foreground">QUERIDÔMETRO (EM CONSTRUÇÃO)</h2>
+          <p className="mb-3 text-sm text-muted-foreground">Módulo reservado para implementação futura.</p>
+          <div className="space-y-2 rounded-md bg-secondary/30 p-3 text-sm text-muted-foreground">
+            <p>- Registro de gols, assistências e defesas por jogador.</p>
+            <p>- Opção de validação pelo admin ou auto-registro sem validação.</p>
+            <p>- Votação de experiência por jogador de 1 a 5 estrelas.</p>
+            <p>- Suporte a meia estrela (ex.: 3,5 estrelas).</p>
+          </div>
+        </div>
+        )}
 
         {pelada.draw_done_at && Array.isArray(pelada.draw_result) && (
           <div className="rounded-lg border border-accent/30 bg-card p-4">
