@@ -224,6 +224,20 @@ const AdminPelada = () => {
     };
   }, [id, fetchAll]);
 
+  // Update member display names when profiles change
+  useEffect(() => {
+    setMemberStats((prevStats) => {
+      const updated = { ...prevStats };
+      Object.entries(updated).forEach(([userId, stat]) => {
+        const profile = profilesByUserId[userId];
+        if (profile?.display_name) {
+          updated[userId] = { ...stat, displayName: profile.display_name };
+        }
+      });
+      return updated;
+    });
+  }, [profilesByUserId]);
+
   const adminUserIds = useMemo(() => {
     const ids = new Set(delegatedAdmins.map((row) => row.user_id));
     if (pelada?.user_id) ids.add(pelada.user_id);
