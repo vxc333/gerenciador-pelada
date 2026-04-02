@@ -20,6 +20,7 @@ export type Database = {
           created_at: string
           guest_name: string
           id: string
+          is_waiting: boolean
           pelada_id: string
           pelada_member_id: string
         }
@@ -28,6 +29,7 @@ export type Database = {
           created_at?: string
           guest_name: string
           id?: string
+          is_waiting?: boolean
           pelada_id: string
           pelada_member_id: string
         }
@@ -36,6 +38,7 @@ export type Database = {
           created_at?: string
           guest_name?: string
           id?: string
+          is_waiting?: boolean
           pelada_id?: string
           pelada_member_id?: string
         }
