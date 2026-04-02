@@ -185,21 +185,21 @@ const AdminPelada = () => {
       peladaCountByUser.get(row.user_id)?.add(row.pelada_id);
     });
 
-    // Build member stats
-    const statsMap: Record<string, MemberStats> = {};
-    (membersData || []).forEach((member) => {
-      const displayName = profilesByUserId[member.user_id]?.display_name || member.member_name;
-      const peladaCount = peladaCountByUser.get(member.user_id)?.size || 0;
-      statsMap[member.user_id] = {
-        userId: member.user_id,
-        displayName,
-        email: "---", // Will be filled from user metadata if available
-        peladasCount: peladaCount,
-        isGoalkeeper: member.is_goalkeeper,
-        isWaiting: member.is_waiting,
-      };
-    });
-    setMemberStats(statsMap);
+    // Store peladaCountByUser for later use in useMemo
+    setMemberStats(
+      (membersData || []).reduce((acc, member) => {
+        const peladaCount = peladaCountByUser.get(member.user_id)?.size || 0;
+        acc[member.user_id] = {
+          userId: member.user_id,
+          displayName: member.member_name,
+          email: "---",
+          peladasCount: peladaCount,
+          isGoalkeeper: member.is_goalkeeper,
+          isWaiting: member.is_waiting,
+        };
+        return acc;
+      }, {} as Record<string, MemberStats>)
+    );
   }, [id, user]);
 
   useEffect(() => {
