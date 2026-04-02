@@ -479,24 +479,20 @@ const Index = () => {
         if (managedIds.length === 0) return;
 
         // criar lista de IDs entre aspas para usar no filtro 'in.(...)'
-        const quoted = managedIds.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(',');
+        const quoted = managedIds.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(",");
 
         const channel = supabase
             .channel(`admin-members-${user.id}`)
             .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'pelada_join_requests', filter: `pelada_id=in.(${quoted})` },
+                "postgres_changes",
+                { event: "*", schema: "public", table: "pelada_join_requests", filter: `pelada_id=in.(${quoted})` },
                 () => {
                     fetchPeladas();
-                }
+                },
             )
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'pelada_members', filter: `pelada_id=in.(${quoted})` },
-                () => {
-                    fetchPeladas();
-                }
-            )
+            .on("postgres_changes", { event: "*", schema: "public", table: "pelada_members", filter: `pelada_id=in.(${quoted})` }, () => {
+                fetchPeladas();
+            })
             .subscribe();
 
         return () => {
@@ -827,29 +823,6 @@ const Index = () => {
 
     const profileRequired = profileLoaded && !profileName.trim();
     const profileBlocked = !hasProfileName || profileRequired;
-
-    const onboardingItems = isSuperAdmin
-        ? [
-              { key: "profile", label: "Completar perfil", done: !!hasProfileName },
-              { key: "first-pelada", label: "Criar primeira pelada", done: myPeladas.length > 0 },
-              { key: "review-requests", label: "Revisar solicitações pendentes", done: pendingGlobalCount === 0 },
-          ]
-        : [
-              { key: "profile", label: "Completar perfil", done: !!hasProfileName },
-              {
-                  key: "request-access",
-                  label: "Solicitar entrada em uma pelada",
-                  done: availablePeladas.some((p) => p.my_request_status === "pending" || p.my_request_status === "approved"),
-              },
-              {
-                  key: "confirm-presence",
-                  label: "Entrar em uma pelada aprovada",
-                  done: availablePeladas.some((p) => p.is_member),
-              },
-          ];
-
-    const onboardingDoneCount = onboardingItems.filter((item) => item.done).length;
-    const shouldShowOnboarding = onboardingDoneCount < onboardingItems.length;
 
     const navItems: Array<{ key: DashboardSection; label: string; icon: typeof LayoutDashboard; show: boolean }> = [
         { key: "resumo", label: "Painel", icon: LayoutDashboard, show: true },
@@ -1331,25 +1304,6 @@ const Index = () => {
                                         )}
                                     </div>
                                 </div>
-
-                                {shouldShowOnboarding && (
-                                    <div className="mt-4 rounded-md border border-border bg-secondary/30 p-3">
-                                        <p className="text-sm font-medium text-foreground">
-                                            Onboarding {isSuperAdmin ? "(admin)" : "(membro)"}: {onboardingDoneCount}/
-                                            {onboardingItems.length}
-                                        </p>
-                                        <div className="mt-2 space-y-1">
-                                            {onboardingItems.map((item) => (
-                                                <p
-                                                    key={item.key}
-                                                    className={`text-xs ${item.done ? "text-primary" : "text-muted-foreground"}`}
-                                                >
-                                                    {item.done ? "[OK]" : "[ ]"} {item.label}
-                                                </p>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
 
                                 {profileBlocked && (
                                     <p className="mt-3 text-xs text-destructive">
