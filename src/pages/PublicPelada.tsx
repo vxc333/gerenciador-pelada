@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Shield, Trash2, ArrowLeft } from "lucide-react";
@@ -68,6 +69,7 @@ const PublicPelada = () => {
   const [isBanned, setIsBanned] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [rules, setRules] = useState(getPeladaRules(""));
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
@@ -118,6 +120,19 @@ const PublicPelada = () => {
       setIsAutomaticMember(!!autoMemberRow);
       setIsBanned(!!banRow);
       setMyProfile(profileData || null);
+
+      // Fetch pending requests if user is admin
+      const isAdminHere = !!delegatedAdminRow || p.user_id === user.id || !!superAdminRow;
+      if (isAdminHere) {
+        const { count } = await supabase
+          .from("pelada_join_requests")
+          .select("*", { count: "exact", head: true })
+          .eq("pelada_id", id)
+          .eq("status", "pending");
+        setPendingRequestsCount(count || 0);
+      } else {
+        setPendingRequestsCount(0);
+      }
     } else {
       setMyJoinRequest(null);
       setIsDelegatedAdmin(false);
@@ -125,6 +140,7 @@ const PublicPelada = () => {
       setIsAutomaticMember(false);
       setIsBanned(false);
       setMyProfile(null);
+      setPendingRequestsCount(0);
     }
 
     setMembers(membersData || []);
@@ -144,6 +160,7 @@ const PublicPelada = () => {
       .on("postgres_changes", { event: "*", schema: "public", table: "pelada_members", filter: `pelada_id=eq.${id}` }, () => fetchAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "pelada_member_guests", filter: `pelada_id=eq.${id}` }, () => fetchAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "pelada_bans", filter: `pelada_id=eq.${id}` }, () => fetchAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "pelada_join_requests", filter: `pelada_id=eq.${id}` }, () => fetchAll())
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "peladas", filter: `id=eq.${id}` }, () => fetchAll())
       .subscribe();
 
@@ -423,7 +440,7 @@ const PublicPelada = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="border-b border-border bg-card px-4 py-6">
-        <div className="container mx-auto flex max-w-md items-center gap-3">
+        <div className="container mx-auto flex max-w-md items-center justify-between gap-3">
           <Link to="/">
             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
               <ArrowLeft className="h-5 w-5" />
@@ -434,6 +451,16 @@ const PublicPelada = () => {
             <p className="mt-2 text-sm text-muted-foreground">{pelada.location} - {pelada.time}</p>
             <p className="mt-1 text-xs text-muted-foreground">{formatGameDate()}</p>
           </div>
+          {isAdmin && (
+            <Link to={`/admin/${id}`}>
+              <Button variant="outline" size="icon" className="relative h-8 w-8 text-muted-foreground hover:text-primary">
+                <Shield className="h-5 w-5" />
+                {pendingRequestsCount > 0 && (
+                  <Badge className="absolute -right-2 -top-2 h-5 min-w-5 px-1 text-[10px]">{pendingRequestsCount}</Badge>
+                )}
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 
