@@ -27,7 +27,8 @@ type PeladaAdminRow = Tables<"pelada_admins">;
 type PeladaBanRow = Tables<"pelada_bans">;
 type UserProfileRow = Tables<"user_profiles">;
 type TimelineEvent = { id: string; message: string; at: string };
-type AdminMenu = "config" | "lista" | "historico" | "queridometro";
+type AdminMenu = "config" | "lista" | "historico" | "queridometro" | "membros";
+type MemberStats = { userId: string; displayName: string; email: string; peladasCount: number; isGoalkeeper: boolean; isWaiting: boolean };
 
 const parseDrawResult = (value: Json | null): DrawTeam[] | null => {
   if (!Array.isArray(value)) return null;
@@ -95,6 +96,7 @@ const AdminPelada = () => {
     maxGuestsPerMember: 7,
     progressiveWarningHours: 24,
   });
+  const [memberStats, setMemberStats] = useState<Record<string, MemberStats>>({});
 
   const fetchAll = useCallback(async () => {
     if (!id || !user) return;
@@ -150,6 +152,7 @@ const AdminPelada = () => {
     setGuests(guestsData || []);
     setJoinRequests(requestsData || []);
     setBans(bansData || []);
+    setMemberStats({});
 
     const ids = new Set<string>();
     (membersData || []).forEach((member) => ids.add(member.user_id));
@@ -167,6 +170,36 @@ const AdminPelada = () => {
       map[profile.user_id] = profile;
     });
     setProfilesByUserId(map);
+
+    // Calculate member participation statistics
+    const { data: allMemberParticipations } = await supabase
+      .from("pelada_members")
+      .select("user_id, pelada_id")
+      .in("user_id", Array.from(ids));
+
+    const peladaCountByUser = new Map<string, Set<string>>();
+    (allMemberParticipations || []).forEach((row) => {
+      if (!peladaCountByUser.has(row.user_id)) {
+        peladaCountByUser.set(row.user_id, new Set());
+      }
+      peladaCountByUser.get(row.user_id)?.add(row.pelada_id);
+    });
+
+    // Build member stats
+    const statsMap: Record<string, MemberStats> = {};
+    (membersData || []).forEach((member) => {
+      const displayName = profilesByUserId[member.user_id]?.display_name || member.member_name;
+      const peladaCount = peladaCountByUser.get(member.user_id)?.size || 0;
+      statsMap[member.user_id] = {
+        userId: member.user_id,
+        displayName,
+        email: "---", // Will be filled from user metadata if available
+        peladasCount: peladaCount,
+        isGoalkeeper: member.is_goalkeeper,
+        isWaiting: member.is_waiting,
+      };
+    });
+    setMemberStats(statsMap);
   }, [id, user]);
 
   useEffect(() => {
@@ -718,8 +751,9 @@ const AdminPelada = () => {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-3">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             <Button variant={activeMenu === "config" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("config")}>Configuração</Button>
+            <Button variant={activeMenu === "membros" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("membros")}>Membros</Button>
             <Button variant={activeMenu === "lista" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("lista")}>Lista e Aprovações</Button>
             <Button variant={activeMenu === "historico" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("historico")}>Histórico</Button>
             <Button variant={activeMenu === "queridometro" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("queridometro")}>Queridômetro</Button>
@@ -1108,6 +1142,112 @@ const AdminPelada = () => {
 
             {members.length === 0 && guests.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Sem confirmações ainda</p>}
           </div>
+        </div>
+        </>
+        )}
+
+        {activeMenu === "membros" && (
+        <>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-3 font-display text-lg text-foreground">SOLICITAÇÕES PENDENTES</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Aprovações e recusas de entrada na pelada.</p>
+
+          {pendingRequests.length === 0 ? (
+            <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">Sem solicitações pendentes</p>
+          ) : (
+            <div className="space-y-2">
+              {pendingRequests.map((request) => (
+                <div key={request.id} className="rounded-md border border-border bg-secondary/40 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <p className="font-medium text-foreground">{profilesByUserId[request.user_id]?.display_name || request.display_name}</p>
+                      <p className="text-xs text-muted-foreground">ID: {request.user_id}</p>
+                    </div>
+                    <div className="flex gap-1">
+                      {bannedUserIds.has(request.user_id) ? (
+                        <Button size="sm" variant="outline" disabled>
+                          Banido
+                        </Button>
+                      ) : (
+                        <Button size="sm" onClick={() => reviewJoinRequest(request.id, "approved")} className="gap-1">
+                          <Check className="h-3.5 w-3.5" /> Aprovar
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => reviewJoinRequest(request.id, "rejected")}
+                        className="gap-1"
+                      >
+                        <X className="h-3.5 w-3.5" /> Recusar
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-3 font-display text-lg text-foreground">MEMBROS CONFIRMADOS</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Lista de jogadores confirmados com estatísticas de participação.</p>
+
+          {Object.keys(memberStats).length === 0 ? (
+            <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">Sem membros confirmados ainda</p>
+          ) : (
+            <div className="space-y-2">
+              {sortedMembers.map((member) => {
+                const stats = memberStats[member.user_id];
+                if (!stats) return null;
+
+                const statusLabels = [];
+                if (member.is_goalkeeper) statusLabels.push("Goleiro");
+                if (member.is_waiting) statusLabels.push("Espera");
+                if (!member.is_goalkeeper && !member.is_waiting) statusLabels.push("Linha");
+
+                return (
+                  <div key={member.id} className="rounded-md border border-border bg-secondary/40 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-foreground">{stats.displayName}</h3>
+                          <div className="flex gap-1">
+                            {statusLabels.map((status) => (
+                              <span
+                                key={status}
+                                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                  status === "Goleiro"
+                                    ? "bg-accent/20 text-accent"
+                                    : status === "Espera"
+                                      ? "bg-muted text-muted-foreground"
+                                      : "bg-primary/15 text-primary"
+                                }`}
+                              >
+                                {status}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">ID: {member.user_id}</p>
+                        <p className="mt-1 text-sm text-foreground">
+                          <span className="font-semibold">{stats.peladasCount}</span> pelada{stats.peladasCount !== 1 ? "s" : ""} participada{stats.peladasCount !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => deleteMember(member.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
         </>
         )}
