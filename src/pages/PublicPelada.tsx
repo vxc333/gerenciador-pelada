@@ -62,6 +62,7 @@ const PublicPelada = () => {
   const [myJoinRequest, setMyJoinRequest] = useState<JoinRequestRow | null>(null);
   const [myProfile, setMyProfile] = useState<UserProfileRow | null>(null);
   const [isDelegatedAdmin, setIsDelegatedAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isAutomaticMember, setIsAutomaticMember] = useState(false);
   const [isBanned, setIsBanned] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -95,7 +96,7 @@ const PublicPelada = () => {
       .order("created_at", { ascending: true });
 
     if (user) {
-      const [{ data: requestData }, { data: delegatedAdminRow }, { data: banRow }, { data: profileData }, { data: autoMemberRow }] = await Promise.all([
+      const [{ data: requestData }, { data: delegatedAdminRow }, { data: banRow }, { data: profileData }, { data: autoMemberRow }, { data: superAdminRow }] = await Promise.all([
         supabase.from("pelada_join_requests").select("*").eq("pelada_id", id).eq("user_id", user.id).maybeSingle(),
         supabase.from("pelada_admins").select("id").eq("pelada_id", id).eq("user_id", user.id).maybeSingle(),
         supabase
@@ -107,16 +108,19 @@ const PublicPelada = () => {
           .maybeSingle(),
         supabase.from("user_profiles").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("pelada_automatic_members").select("id").eq("user_id", user.id).maybeSingle(),
+        supabase.from("app_super_admins").select("user_id").eq("user_id", user.id).maybeSingle(),
       ]);
 
       setMyJoinRequest(requestData || null);
       setIsDelegatedAdmin(!!delegatedAdminRow);
+      setIsSuperAdmin(!!superAdminRow);
       setIsAutomaticMember(!!autoMemberRow);
       setIsBanned(!!banRow);
       setMyProfile(profileData || null);
     } else {
       setMyJoinRequest(null);
       setIsDelegatedAdmin(false);
+      setIsSuperAdmin(false);
       setIsAutomaticMember(false);
       setIsBanned(false);
       setMyProfile(null);
@@ -184,8 +188,17 @@ const PublicPelada = () => {
   }, [user, memberName, getInitialMemberName]);
 
   useEffect(() => {
-    const autoEnrollAdmin = async () => {
-      if (!user || !pelada || !isAdmin || myMember || !canAccessPelada || isBanned || !preferredMemberName || !rules.autoConfirmAdmins) return;
+    // Auto-confirm: admins (owner or delegated) BUT NOT super admins
+    const autoEnroll = async () => {
+      if (!user || !pelada || myMember || isBanned || !preferredMemberName) return;
+      if (!canAccessPelada) return;
+
+      const isAdminOfThisPelada = pelada.user_id === user.id || isDelegatedAdmin;
+      
+      // Auto-confirm if: admin of this pelada (and NOT super admin) OR regular member with rule enabled
+      const shouldAutoConfirm = (isAdminOfThisPelada && !isSuperAdmin) || (!isAdminOfThisPelada && rules.autoConfirmAdmins);
+      
+      if (!shouldAutoConfirm) return;
 
       const { error } = await supabase.from("pelada_members").upsert(
         {
@@ -199,15 +212,15 @@ const PublicPelada = () => {
       );
 
       if (error) {
-        toast.error("Não foi possível confirmar automaticamente sua presença de admin");
+        console.error("Erro ao confirmar presença:", error);
         return;
       }
 
       fetchAll();
     };
 
-    autoEnrollAdmin();
-  }, [canAccessPelada, fetchAll, isAdmin, isBanned, myMember, myProfile?.avatar_url, pelada, preferredMemberName, rules.autoConfirmAdmins, user]);
+    autoEnroll();
+  }, [canAccessPelada, fetchAll, isDelegatedAdmin, isSuperAdmin, isBanned, myMember, myProfile?.avatar_url, pelada, preferredMemberName, rules.autoConfirmAdmins, user]);
 
   const handleConfirmMe = async () => {
     if (!user || !pelada) return;
@@ -404,6 +417,8 @@ const PublicPelada = () => {
     : 0;
 
   const orderedGuestEntries = useMemo(() => {
+    if (!pelada) return [];
+    
     const ordered = [...guests];
 
     if (pelada.guest_priority_mode === "guest_added_order") {
@@ -424,7 +439,7 @@ const PublicPelada = () => {
     });
 
     return ordered;
-  }, [guests, pelada.guest_priority_mode, sortedMembers]);
+  }, [guests, pelada, sortedMembers]);
 
   return (
     <div className="min-h-screen bg-background">
