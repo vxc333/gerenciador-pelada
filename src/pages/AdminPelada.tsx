@@ -1290,7 +1290,6 @@ const AdminPelada = () => {
             <p>- Registro de gols, assistências e defesas por jogador.</p>
             <p>- Opção de validação pelo admin ou auto-registro sem validação.</p>
             <p>- Votação de experiência por jogador de 1 a 5 estrelas.</p>
-            <p>- Suporte a meia estrela (ex.: 3,5 estrelas).</p>
           </div>
         </div>
         )}
