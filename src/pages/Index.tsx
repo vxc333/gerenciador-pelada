@@ -51,7 +51,7 @@ interface PeladaCard extends PeladaRow {
   pending_requests_count?: number;
 }
 
-type DashboardSection = "resumo" | "historico" | "admin" | "disponiveis";
+type DashboardSection = "resumo" | "historico" | "admin" | "disponiveis" | "membros";
 
 interface UserProfile {
   display_name: string;
@@ -127,6 +127,8 @@ const Index = () => {
   const [peladaHistory, setPeladaHistory] = useState<Array<{ id: string; peladaId: string; peladaTitle: string; peladaDate: string; peladaLocation: string; status: string; confirmed: boolean; createdAt: string }>>([]);
   const [loadingStats, setLoadingStats] = useState(false);
   const [activeSection, setActiveSection] = useState<DashboardSection>("resumo");
+  const [membersData, setMembersData] = useState<Tables<"pelada_members">[]>([]);
+  const [profilesByUserId, setProfilesByUserId] = useState<Record<string, Tables<"user_profiles">>>({});
 
   const fetchParticipationStats = useCallback(async () => {
     if (!user) return;
@@ -335,6 +337,34 @@ const Index = () => {
 
     setNotificationEvents(mergedEvents);
     setPendingGlobalCount(Array.from(pendingByPelada.values()).reduce((acc, value) => acc + value, 0));
+
+    // Fetch members and profiles for managed peladas
+    if (managedIds.length > 0) {
+      const { data: members } = await supabase
+        .from("pelada_members")
+        .select("*")
+        .in("pelada_id", managedIds);
+
+      setMembersData(members || []);
+
+      // Fetch profiles for members
+      const memberUserIds = new Set((members || []).map((m) => m.user_id));
+      if (memberUserIds.size > 0) {
+        const { data: profiles } = await supabase
+          .from("user_profiles")
+          .select("*")
+          .in("user_id", Array.from(memberUserIds));
+
+        const profileMap: Record<string, Tables<"user_profiles">> = {};
+        (profiles || []).forEach((profile) => {
+          profileMap[profile.user_id] = profile;
+        });
+        setProfilesByUserId(profileMap);
+      }
+    } else {
+      setMembersData([]);
+      setProfilesByUserId({});
+    }
 
     setMyPeladas(myEnriched);
     setAvailablePeladas(decoratedAvailable);
@@ -619,6 +649,7 @@ const Index = () => {
   const navItems: Array<{ key: DashboardSection; label: string; icon: typeof LayoutDashboard; show: boolean }> = [
     { key: "resumo", label: "Painel", icon: LayoutDashboard, show: true },
     { key: "historico", label: "Histórico", icon: History, show: true },
+    { key: "membros", label: "Membros", icon: Users, show: isSuperAdmin || myPeladas.length > 0 },
     { key: "admin", label: "Minhas peladas", icon: FolderKanban, show: myPeladas.length > 0 || isSuperAdmin },
     { key: "disponiveis", label: "Peladas disponíveis", icon: Users, show: true },
   ];
@@ -1167,6 +1198,65 @@ const Index = () => {
             ) : (
               <div className="rounded-lg border border-border bg-card p-8 text-center">
                 <p className="text-muted-foreground">Você ainda não tem peladas para administrar.</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {activeSection === "membros" && (
+          <>
+            <div className="mb-3">
+              <h2 className="font-display text-xl text-foreground">MEMBROS DE MINHAS PELADAS</h2>
+              <p className="text-sm text-muted-foreground">Visualize todos os membros confirmados em suas peladass.</p>
+            </div>
+            {myPeladas.length === 0 ? (
+              <div className="rounded-lg border border-border bg-card p-8 text-center">
+                <p className="text-muted-foreground">Você ainda não tem peladas criadas.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {myPeladas.map((pelada) => {
+                  const peladaMembers = (membersData || []).filter((m) => m.pelada_id === pelada.id);
+                  if (peladaMembers.length === 0) return null;
+
+                  return (
+                    <div key={pelada.id} className="rounded-lg border border-border bg-card p-4">
+                      <div className="mb-3">
+                        <h3 className="font-display text-lg text-foreground">{pelada.title}</h3>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDateBrasiliaLong(new Date(`${pelada.date}T12:00:00Z`))} - {pelada.location} - {pelada.time}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        {peladaMembers.map((member) => {
+                          const profile = profilesByUserId[member.user_id];
+                          return (
+                            <div key={member.id} className="flex items-center justify-between rounded-md border border-border bg-secondary/30 p-2">
+                              <div className="flex items-center gap-2 flex-1">
+                                <Avatar className="h-6 w-6">
+                                  <AvatarImage src={member.member_avatar_url || undefined} alt={member.member_name} />
+                                  <AvatarFallback className="text-xs">{getInitial(member.member_name)}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-foreground truncate">{member.member_name}</p>
+                                  <p className="text-xs text-muted-foreground truncate">{member.user_id}</p>
+                                </div>
+                              </div>
+                              <div className="flex gap-1">
+                                {member.is_goalkeeper && (
+                                  <span className="rounded-full bg-accent/20 px-2 py-1 text-[11px] font-medium text-accent">Goleiro</span>
+                                )}
+                                {member.is_waiting && (
+                                  <span className="rounded-full bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground">Espera</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
