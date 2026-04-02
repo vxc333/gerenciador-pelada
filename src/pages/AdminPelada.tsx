@@ -14,6 +14,7 @@ import {
   fromBrasiliaDateTimeLocalInput,
   toBrasiliaDateTimeLocalInput,
 } from "@/lib/datetime-br";
+import { buildOrderedPeladaEntries, isGoalkeeperGuestName, sortPeladaMembers } from "@/lib/pelada-participants";
 import { getPeladaRules, setPeladaRules, type PeladaRules } from "@/lib/pelada-rules";
 import type { Json, Tables } from "@/integrations/supabase/types";
 
@@ -59,8 +60,6 @@ const shuffle = <T,>(arr: T[]) => {
   }
   return copy;
 };
-
-const isGoalkeeperGuestName = (guestName: string) => /\(goleiro\)\s*$/i.test(guestName);
 
 const AdminPelada = () => {
   const { id } = useParams<{ id: string }>();
@@ -198,14 +197,6 @@ const AdminPelada = () => {
     return ids;
   }, [delegatedAdmins, pelada?.user_id]);
 
-  const guestsByMember = useMemo(() => {
-    return guests.reduce<Record<string, GuestRow[]>>((acc, guest) => {
-      acc[guest.pelada_member_id] = acc[guest.pelada_member_id] || [];
-      acc[guest.pelada_member_id].push(guest);
-      return acc;
-    }, {});
-  }, [guests]);
-
   const pendingRequests = useMemo(() => joinRequests.filter((request) => request.status === "pending"), [joinRequests]);
   const activeBans = useMemo(
     () => bans.filter((ban) => new Date(ban.expires_at).getTime() > Date.now()),
@@ -257,16 +248,7 @@ const AdminPelada = () => {
   };
 
   const sortedMembers = useMemo(() => {
-    const copy = [...members];
-    if (listPriorityMode === "member_priority") {
-      copy.sort((a, b) => {
-        if (b.priority_score !== a.priority_score) return b.priority_score - a.priority_score;
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      });
-      return copy;
-    }
-    copy.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    return copy;
+    return sortPeladaMembers(members, listPriorityMode);
   }, [members, listPriorityMode]);
 
   const getMemberDisplayName = useCallback(
@@ -277,57 +259,16 @@ const AdminPelada = () => {
     [profilesByUserId]
   );
 
-  const flattenedGuestEntries = useMemo(() => {
-    const ordered = [...guests];
-
-    if (guestPriorityMode === "guest_added_order") {
-      ordered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      return ordered;
-    }
-
-    const memberOrder = new Map<string, number>();
-    sortedMembers.forEach((member, index) => {
-      memberOrder.set(member.id, index);
-    });
-
-    ordered.sort((a, b) => {
-      const memberA = memberOrder.get(a.pelada_member_id) ?? Number.MAX_SAFE_INTEGER;
-      const memberB = memberOrder.get(b.pelada_member_id) ?? Number.MAX_SAFE_INTEGER;
-      if (memberA !== memberB) return memberA - memberB;
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
-
-    return ordered;
-  }, [guestPriorityMode, guests, sortedMembers]);
+  const orderedListEntries = useMemo(() => {
+    if (!pelada) return [];
+    return buildOrderedPeladaEntries(pelada, members, guests);
+  }, [guests, members, pelada]);
 
   const eligibleEntries = useMemo(() => {
-    const activeMembers = sortedMembers.filter((member) => !member.is_waiting && !member.is_goalkeeper);
-    const activeMemberIds = new Set(activeMembers.map((member) => member.id));
-    const names: string[] = [];
-
-    if (guestPriorityMode === "guest_added_order") {
-      activeMembers.forEach((member) => {
-        names.push(getMemberDisplayName(member));
-      });
-
-      flattenedGuestEntries.forEach((guest) => {
-        if (!activeMemberIds.has(guest.pelada_member_id)) return;
-        if (isGoalkeeperGuestName(guest.guest_name)) return;
-        names.push(guest.guest_name);
-      });
-      return names;
-    }
-
-    activeMembers.forEach((member) => {
-      names.push(getMemberDisplayName(member));
-      (guestsByMember[member.id] || []).forEach((guest) => {
-        if (isGoalkeeperGuestName(guest.guest_name)) return;
-        names.push(guest.guest_name);
-      });
-    });
-
-    return names;
-  }, [flattenedGuestEntries, getMemberDisplayName, guestPriorityMode, guestsByMember, sortedMembers]);
+    return orderedListEntries
+      .filter((entry) => !entry.isWaiting && !entry.isGoalkeeper)
+      .map((entry) => (entry.kind === "member" ? getMemberDisplayName(entry.member) : entry.guest.guest_name));
+  }, [getMemberDisplayName, orderedListEntries]);
 
   const timelineEvents = useMemo<TimelineEvent[]>(() => {
     if (!pelada) return [];
@@ -1086,74 +1027,80 @@ const AdminPelada = () => {
           </div>
 
           <div className="space-y-2">
-            {sortedMembers.map((member) => (
-              <div key={member.id} className="rounded-md border border-border bg-secondary/40 p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-foreground">
-                    {getMemberDisplayName(member)}
-                    {member.is_goalkeeper ? " (goleiro)" : ""}
-                    {member.is_waiting ? " (espera)" : ""}
-                    {bannedUserIds.has(member.user_id) ? " (banido)" : ""}
-                    {member.is_automatic_entry ? (
-                      <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-500/20 px-1.5 py-0.5 text-xs text-green-600">
-                        Automático
-                      </span>
-                    ) : null}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      className="h-8 w-20"
-                      value={member.priority_score}
-                      onChange={(e) => updateMemberPriority(member.id, Number(e.target.value || 0))}
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      max={365}
-                      className="h-8 w-20"
-                      value={banDaysByUser[member.user_id] || 7}
-                      onChange={(e) =>
-                        setBanDaysByUser((prev) => ({
-                          ...prev,
-                          [member.user_id]: Number(e.target.value || 1),
-                        }))
-                      }
-                    />
-                    {bannedUserIds.has(member.user_id) ? (
-                      <Button variant="outline" size="sm" onClick={() => unbanUser(member.user_id)}>
-                        Desbanir
-                      </Button>
-                    ) : (
-                      <Button variant="destructive" size="sm" onClick={() => banUser(member.user_id)}>
-                        Banir dias
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteMember(member.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
+            {orderedListEntries.map((entry) => {
+              if (entry.kind === "member") {
+                const member = entry.member;
 
-            {flattenedGuestEntries.map((guest) => {
-              const guestMember = members.find((member) => member.id === guest.pelada_member_id);
+                return (
+                  <div key={member.id} className="rounded-md border border-border bg-secondary/40 p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-foreground">
+                        {getMemberDisplayName(member)}
+                        {entry.isGoalkeeper ? " (goleiro)" : ""}
+                        {entry.isWaiting ? " (espera)" : ""}
+                        {bannedUserIds.has(member.user_id) ? " (banido)" : ""}
+                        {member.is_automatic_entry ? (
+                          <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-500/20 px-1.5 py-0.5 text-xs text-green-600">
+                            Automático
+                          </span>
+                        ) : null}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          className="h-8 w-20"
+                          value={member.priority_score}
+                          onChange={(e) => updateMemberPriority(member.id, Number(e.target.value || 0))}
+                        />
+                        <Input
+                          type="number"
+                          min={1}
+                          max={365}
+                          className="h-8 w-20"
+                          value={banDaysByUser[member.user_id] || 7}
+                          onChange={(e) =>
+                            setBanDaysByUser((prev) => ({
+                              ...prev,
+                              [member.user_id]: Number(e.target.value || 1),
+                            }))
+                          }
+                        />
+                        {bannedUserIds.has(member.user_id) ? (
+                          <Button variant="outline" size="sm" onClick={() => unbanUser(member.user_id)}>
+                            Desbanir
+                          </Button>
+                        ) : (
+                          <Button variant="destructive" size="sm" onClick={() => banUser(member.user_id)}>
+                            Banir dias
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteMember(member.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              const guest = entry.guest;
+
               return (
                 <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-foreground">
                       {guest.guest_name}
                       {guest.admin_selected ? " (externo via admin)" : " (convidado)"}
+                      {entry.isWaiting ? " (espera)" : ""}
                     </span>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteGuest(guest.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Vinculado a: {guestMember ? getMemberDisplayName(guestMember) : "participante removido"}
+                    Vinculado a: {entry.hostMember ? getMemberDisplayName(entry.hostMember) : "participante removido"}
                   </p>
                 </div>
               );
