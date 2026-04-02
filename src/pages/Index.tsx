@@ -78,6 +78,32 @@ const getDefaultOpenAt = (date: string) => {
     return format(base, "yyyy-MM-dd'T'HH:mm");
 };
 
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+const parsePeladaStartLocal = (date?: string, time?: string): Date | null => {
+    if (!date) return null;
+    let hhmmss = "12:00:00";
+    if (time && typeof time === "string") {
+        const m = time.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+        if (m) {
+            const hh = m[1].padStart(2, "0");
+            const mm = m[2];
+            const ss = m[3] || "00";
+            hhmmss = `${hh}:${mm}:${ss}`;
+        } else {
+            const n = time.match(/(\d{1,2})/);
+            if (n) {
+                const hh = n[1].padStart(2, "0");
+                hhmmss = `${hh}:00:00`;
+            }
+        }
+    }
+    const isoLocal = `${date}T${hhmmss}`;
+    const d = new Date(isoLocal);
+    if (isNaN(d.getTime())) return null;
+    return d;
+};
+
 const Index = () => {
     const { user, loading, profileChecked, hasProfileName, signOut } = useAuth();
     const routerLocation = useLocation();
@@ -99,6 +125,7 @@ const Index = () => {
             return typeof value === "string" ? value : value.toLocaleDateString("pt-BR");
         }
     }, []);
+    
     const [myPeladas, setMyPeladas] = useState<PeladaCard[]>([]);
     const [availablePeladas, setAvailablePeladas] = useState<PeladaCard[]>([]);
     const [newDate, setNewDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -265,7 +292,15 @@ const Index = () => {
             setTime(last.time);
         }
 
-        const availableBase = (allData || []).filter((pelada) => pelada.user_id !== user.id);
+        // Filter available peladas: exclude those already happened (start + 2h <= now)
+        const now = new Date();
+        const availableBase = (allData || [])
+            .filter((pelada) => pelada.user_id !== user.id)
+            .filter((pelada) => {
+                const start = parsePeladaStartLocal(pelada.date, (pelada as PeladaRow).time);
+                if (!start) return true; // keep if cannot parse date/time
+                return start.getTime() + TWO_HOURS_MS > now.getTime();
+            });
         const availableEnriched = await enrichWithCounts(availableBase);
 
         const decoratedAvailable = availableEnriched.map((pelada) => {
