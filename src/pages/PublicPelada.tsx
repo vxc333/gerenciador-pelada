@@ -403,12 +403,6 @@ const PublicPelada = () => {
     ? waitingOrder.findIndex((member) => member.id === myMember.id) + 1
     : 0;
 
-  const guestsByMember = guests.reduce<Record<string, GuestRow[]>>((acc, guest) => {
-    acc[guest.pelada_member_id] = acc[guest.pelada_member_id] || [];
-    acc[guest.pelada_member_id].push(guest);
-    return acc;
-  }, {});
-
   const orderedGuestEntries = useMemo(() => {
     const ordered = [...guests];
 
@@ -573,63 +567,78 @@ const PublicPelada = () => {
           <div className="mb-2 flex gap-2 text-xs">
             <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary">Jogadores: {memberCount}/{memberCapacity}</span>
             <span className="rounded-full bg-accent/20 px-2 py-0.5 text-accent">Goleiros: {gkCount}/{gkCapacity}</span>
+            <span className="rounded-full bg-secondary px-2 py-0.5 text-foreground">Convidados: {orderedGuestEntries.length}</span>
           </div>
           <p className="mb-2 text-xs text-muted-foreground">
-            Ordem dos membros: {pelada.list_priority_mode === "member_priority" ? "prioridade do membro" : "confirmação"} | ordem dos convidados: {pelada.guest_priority_mode === "guest_added_order" ? "adição" : "fila do membro (exibidos separados)"}
+            Ordem dos membros: {pelada.list_priority_mode === "member_priority" ? "prioridade" : "confirmação"} | convidados: {pelada.guest_priority_mode === "guest_added_order" ? "ordem de adição" : "ordem do dono"}
           </p>
           {waitingMembers.length > 0 && (
             <p className="mb-2 text-xs text-muted-foreground">Lista de espera atual: {waitingMembers.length}</p>
           )}
 
-          <div className="space-y-2">
-            {sortedMembers.map((member) => (
-              <div key={member.id} className="rounded-md border border-border bg-secondary/50 p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-7 w-7">
-                      <AvatarImage src={member.member_avatar_url || undefined} alt={member.member_name} />
-                      <AvatarFallback className="text-[11px] font-semibold">{getInitial(member.member_name)}</AvatarFallback>
-                    </Avatar>
-                    <span className="text-sm text-foreground">
-                      {member.member_name}
-                      {member.is_goalkeeper ? " (goleiro)" : ""}
-                      {member.is_waiting ? " (espera)" : ""}
-                      {pelada.list_priority_mode === "member_priority" ? ` (prio ${member.priority_score})` : ""}
-                    </span>
-                  </div>
-                  {member.is_waiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
-                </div>
-              </div>
-            ))}
-
-            {orderedGuestEntries.map((guest) => {
-              const hostMember = members.find((member) => member.id === guest.pelada_member_id);
-              const canDelete = !!myMember && guest.pelada_member_id === myMember.id;
-
-              return (
-                <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Avatar className="h-6 w-6">
-                        <AvatarFallback className="text-[10px] font-semibold">{getInitial(guest.guest_name)}</AvatarFallback>
-                      </Avatar>
-                      <span className="text-foreground">{guest.guest_name} (convidado)</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-md border border-border bg-secondary/30 p-2">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Participantes</p>
+              <div className="space-y-2">
+                {sortedMembers.map((member) => (
+                  <div key={member.id} className="rounded-md border border-border bg-secondary/50 p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-7 w-7">
+                          <AvatarImage src={member.member_avatar_url || undefined} alt={member.member_name} />
+                          <AvatarFallback className="text-[11px] font-semibold">{getInitial(member.member_name)}</AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm text-foreground">
+                          {member.member_name}
+                          {member.is_goalkeeper ? " (goleiro)" : ""}
+                          {member.is_waiting ? " (espera)" : ""}
+                          {pelada.list_priority_mode === "member_priority" ? ` (prio ${member.priority_score})` : ""}
+                        </span>
+                      </div>
+                      {member.is_waiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
                     </div>
-                    {canDelete && (
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveGuest(guest.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
                   </div>
-                  <p className="mt-1 text-muted-foreground">
-                    Convidado de: {hostMember?.member_name || "participante removido"}
-                  </p>
-                </div>
-              );
-            })}
+                ))}
+                {sortedMembers.length === 0 && (
+                  <p className="py-3 text-center text-sm text-muted-foreground">Sem participantes confirmados</p>
+                )}
+              </div>
+            </div>
 
-            {members.length === 0 && guests.length === 0 && <p className="py-3 text-center text-sm text-muted-foreground">Ninguém confirmou ainda</p>}
+            <div className="rounded-md border border-border bg-muted/20 p-2">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Convidados</p>
+              <div className="space-y-2">
+                {orderedGuestEntries.map((guest) => {
+                  const hostMember = members.find((member) => member.id === guest.pelada_member_id);
+                  const canDelete = !!myMember && guest.pelada_member_id === myMember.id;
+
+                  return (
+                    <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarFallback className="text-[10px] font-semibold">{getInitial(guest.guest_name)}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-foreground">{guest.guest_name}</span>
+                        </div>
+                        {canDelete && (
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveGuest(guest.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                      <p className="mt-1 text-muted-foreground">Responsável: {hostMember?.member_name || "participante removido"}</p>
+                    </div>
+                  );
+                })}
+                {orderedGuestEntries.length === 0 && (
+                  <p className="py-3 text-center text-sm text-muted-foreground">Sem convidados</p>
+                )}
+              </div>
+            </div>
           </div>
+
+          {members.length === 0 && guests.length === 0 && <p className="mt-3 py-3 text-center text-sm text-muted-foreground">Ninguém confirmou ainda</p>}
         </div>
 
         {pelada.draw_done_at && (
