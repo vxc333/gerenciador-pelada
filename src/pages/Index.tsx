@@ -27,6 +27,11 @@ import {
   UserPlus,
   Shield,
   Trophy,
+  LayoutDashboard,
+  History,
+  FolderKanban,
+  Users,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -41,9 +46,12 @@ interface PeladaCard extends PeladaRow {
   confirmed_count?: number;
   my_request_status?: JoinRequestStatus | null;
   is_member?: boolean;
+  is_confirmed?: boolean;
   is_admin?: boolean;
   pending_requests_count?: number;
 }
+
+type DashboardSection = "resumo" | "historico" | "admin" | "disponiveis";
 
 interface UserProfile {
   display_name: string;
@@ -118,6 +126,7 @@ const Index = () => {
   const [participationStats, setParticipationStats] = useState<ParticipationStats | null>(null);
   const [peladaHistory, setPeladaHistory] = useState<Array<{ id: string; peladaId: string; peladaTitle: string; peladaDate: string; peladaLocation: string; status: string; confirmed: boolean; createdAt: string }>>([]);
   const [loadingStats, setLoadingStats] = useState(false);
+  const [activeSection, setActiveSection] = useState<DashboardSection>("resumo");
 
   const fetchParticipationStats = useCallback(async () => {
     if (!user) return;
@@ -244,11 +253,13 @@ const Index = () => {
       const isAdmin = delegatedAdmin || pelada.user_id === user.id;
       const requestStatus = requestStatusByPelada.get(pelada.id) || null;
       const isMember = memberPeladaIds.has(pelada.id) || requestStatus === "approved" || isAutoMember;
+      const isConfirmed = memberPeladaIds.has(pelada.id);
 
       return {
         ...pelada,
         my_request_status: requestStatus,
         is_member: isMember,
+        is_confirmed: isConfirmed,
         is_admin: isAdmin,
         pending_requests_count: pendingByPelada.get(pelada.id) || 0,
       };
@@ -440,6 +451,54 @@ const Index = () => {
     toast.success("Link copiado!");
   };
 
+  const handleQuickConfirm = async (pelada: PeladaCard) => {
+    if (!pelada.is_member) {
+      toast.error("Você ainda não foi aprovado nessa pelada");
+      return;
+    }
+
+    if (pelada.is_confirmed) {
+      toast.success("Você já está confirmado nessa pelada");
+      return;
+    }
+
+    const isOpen = new Date() >= new Date(pelada.confirmations_open_at);
+    if (!isOpen && !pelada.is_admin) {
+      toast.error("As confirmações ainda não abriram para essa pelada");
+      return;
+    }
+
+    const preferredName =
+      profileName.trim() ||
+      (user.user_metadata?.full_name as string | undefined)?.trim() ||
+      (user.email ? user.email.split("@")[0] : "Jogador");
+
+    if (!preferredName) {
+      toast.error("Complete seu perfil com nome antes de confirmar presença");
+      return;
+    }
+
+    const { error } = await supabase.from("pelada_members").upsert(
+      {
+        pelada_id: pelada.id,
+        user_id: user.id,
+        member_name: preferredName,
+        member_avatar_url: avatarUrl.trim() ? avatarUrl.trim() : null,
+        is_goalkeeper: false,
+      },
+      { onConflict: "pelada_id,user_id" }
+    );
+
+    if (error) {
+      toast.error("Não foi possível confirmar sua presença");
+      return;
+    }
+
+    toast.success("Presença confirmada");
+    fetchPeladas();
+    fetchParticipationStats();
+  };
+
   const formatDate = (dateStr: string) => {
     try {
       return formatDateBrasiliaLong(new Date(`${dateStr}T12:00:00Z`));
@@ -557,6 +616,13 @@ const Index = () => {
   const onboardingDoneCount = onboardingItems.filter((item) => item.done).length;
   const shouldShowOnboarding = onboardingDoneCount < onboardingItems.length;
 
+  const navItems: Array<{ key: DashboardSection; label: string; icon: typeof LayoutDashboard; show: boolean }> = [
+    { key: "resumo", label: "Painel", icon: LayoutDashboard, show: true },
+    { key: "historico", label: "Histórico", icon: History, show: true },
+    { key: "admin", label: "Minhas peladas", icon: FolderKanban, show: myPeladas.length > 0 || isSuperAdmin },
+    { key: "disponiveis", label: "Peladas disponíveis", icon: Users, show: true },
+  ];
+
   const renderPeladaCard = (p: PeladaCard, options?: { showAdminActions?: boolean; availableCard?: boolean }) => {
     const showAdminActions = options?.showAdminActions ?? false;
     const availableCard = options?.availableCard ?? false;
@@ -645,7 +711,7 @@ const Index = () => {
         </div>
 
         {availableCard && (
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             {p.is_admin ? (
               <Link to={`/admin/${p.id}`} className="flex-1">
                 <Button className="w-full gap-2">
@@ -654,9 +720,19 @@ const Index = () => {
                 </Button>
               </Link>
             ) : p.is_member ? (
-              <Link to={`/pelada/${p.id}`} className="flex-1">
-                <Button className="w-full">Abrir pelada</Button>
-              </Link>
+              <>
+                <Link to={`/pelada/${p.id}`} className="flex-1">
+                  <Button className="w-full">Abrir pelada</Button>
+                </Link>
+                <Button
+                  className="w-full sm:w-auto"
+                  variant={p.is_confirmed ? "secondary" : "default"}
+                  disabled={!!p.is_confirmed || profileBlocked}
+                  onClick={() => handleQuickConfirm(p)}
+                >
+                  {p.is_confirmed ? "Confirmado" : "Confirmar agora"}
+                </Button>
+              </>
             ) : p.my_request_status === "pending" ? (
               <Button className="w-full" disabled>
                 Solicitação enviada
@@ -732,7 +808,53 @@ const Index = () => {
         </div>
       </header>
 
-      <main className="container mx-auto max-w-3xl px-4 py-6">
+      <main className="container mx-auto max-w-6xl px-4 py-6">
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+          {navItems
+            .filter((item) => item.show)
+            .map((item) => {
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.key}
+                  variant={activeSection === item.key ? "default" : "outline"}
+                  size="sm"
+                  className="whitespace-nowrap"
+                  onClick={() => setActiveSection(item.key)}
+                >
+                  <Icon className="mr-1 h-4 w-4" /> {item.label}
+                </Button>
+              );
+            })}
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+          <aside className="hidden lg:block">
+            <div className="sticky top-5 rounded-lg border border-border bg-card p-3">
+              <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Navegação</p>
+              <div className="space-y-1">
+                {navItems
+                  .filter((item) => item.show)
+                  .map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Button
+                        key={item.key}
+                        variant={activeSection === item.key ? "secondary" : "ghost"}
+                        className="w-full justify-start"
+                        onClick={() => setActiveSection(item.key)}
+                      >
+                        <Icon className="mr-2 h-4 w-4" />
+                        {item.label}
+                      </Button>
+                    );
+                  })}
+              </div>
+            </div>
+          </aside>
+
+          <div>
+        {activeSection === "resumo" && (
         <div className="mb-6 rounded-lg border border-border bg-card p-4 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -959,8 +1081,9 @@ const Index = () => {
             <p className="mt-3 text-xs text-destructive">Salve seu nome no perfil para continuar usando o sistema.</p>
           )}
         </div>
+        )}
 
-        {!loadingStats && participationStats && (
+        {activeSection === "historico" && !loadingStats && participationStats && (
           <>
             <div className="mb-3 mt-8">
               <h2 className="font-display text-xl text-foreground">HISTÓRICO DE PARTICIPAÇÃO</h2>
@@ -1027,17 +1150,25 @@ const Index = () => {
           </>
         )}
 
-        {myPeladas.length > 0 && (
+        {activeSection === "admin" && (
           <>
             <div className="mb-3">
               <h2 className="font-display text-xl text-foreground">MINHAS PELADAS (ADMIN)</h2>
             </div>
-            <div className="space-y-3">
-              {myPeladas.map((pelada) => renderPeladaCard(pelada, { showAdminActions: true }))}
-            </div>
+            {myPeladas.length > 0 ? (
+              <div className="space-y-3">
+                {myPeladas.map((pelada) => renderPeladaCard(pelada, { showAdminActions: true }))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border bg-card p-8 text-center">
+                <p className="text-muted-foreground">Você ainda não tem peladas para administrar.</p>
+              </div>
+            )}
           </>
         )}
 
+        {(activeSection === "disponiveis" || activeSection === "resumo") && (
+        <>
         <div className="mb-3 mt-8">
           <h2 className="font-display text-xl text-foreground">PELADAS DISPONIVEIS</h2>
           <p className="text-sm text-muted-foreground">Solicite entrada para participar. Apenas admin pode aprovar.</p>
@@ -1050,6 +1181,21 @@ const Index = () => {
           )}
 
           {availablePeladas.map((pelada) => renderPeladaCard(pelada, { availableCard: true }))}
+        </div>
+        </>
+        )}
+
+        {activeSection === "resumo" && myPeladas.length > 0 && (
+          <>
+            <div className="mb-3 mt-8">
+              <h2 className="font-display text-xl text-foreground">MINHAS PELADAS (ADMIN)</h2>
+            </div>
+            <div className="space-y-3">
+              {myPeladas.slice(0, 3).map((pelada) => renderPeladaCard(pelada, { showAdminActions: true }))}
+            </div>
+          </>
+        )}
+          </div>
         </div>
       </main>
     </div>
