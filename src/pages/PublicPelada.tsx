@@ -403,18 +403,26 @@ const PublicPelada = () => {
     }
   };
 
-  const sortedMembers = [...members].sort((a, b) => {
-    if (pelada.list_priority_mode === "member_priority") {
-      if (b.priority_score !== a.priority_score) return b.priority_score - a.priority_score;
+  const sortedMembers = useMemo(() => {
+    if (!pelada) return [];
+    return [...members].sort((a, b) => {
+      if (pelada.list_priority_mode === "member_priority") {
+        if (b.priority_score !== a.priority_score) return b.priority_score - a.priority_score;
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    }
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-  });
+    });
+  }, [members, pelada]);
 
-  const waitingOrder = [...waitingMembers].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  const myWaitingPosition = myMember?.is_waiting
-    ? waitingOrder.findIndex((member) => member.id === myMember.id) + 1
-    : 0;
+  const waitingOrder = useMemo(() => {
+    if (!waitingMembers) return [];
+    return [...waitingMembers].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  }, [waitingMembers]);
+
+  const myWaitingPosition = useMemo(() => {
+    if (!myMember?.is_waiting) return 0;
+    return waitingOrder.findIndex((member) => member.id === myMember.id) + 1;
+  }, [myMember?.is_waiting, myMember?.id, waitingOrder]);
 
   const orderedGuestEntries = useMemo(() => {
     if (!pelada) return [];
