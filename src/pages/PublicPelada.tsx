@@ -409,6 +409,29 @@ const PublicPelada = () => {
     return acc;
   }, {});
 
+  const orderedGuestEntries = useMemo(() => {
+    const ordered = [...guests];
+
+    if (pelada.guest_priority_mode === "guest_added_order") {
+      ordered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      return ordered;
+    }
+
+    const memberOrder = new Map<string, number>();
+    sortedMembers.forEach((member, index) => {
+      memberOrder.set(member.id, index);
+    });
+
+    ordered.sort((a, b) => {
+      const orderA = memberOrder.get(a.pelada_member_id) ?? Number.MAX_SAFE_INTEGER;
+      const orderB = memberOrder.get(b.pelada_member_id) ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+
+    return ordered;
+  }, [guests, pelada.guest_priority_mode, sortedMembers]);
+
   return (
     <div className="min-h-screen bg-background">
       <div className="border-b border-border bg-card px-4 py-6">
@@ -552,61 +575,60 @@ const PublicPelada = () => {
             <span className="rounded-full bg-accent/20 px-2 py-0.5 text-accent">Goleiros: {gkCount}/{gkCapacity}</span>
           </div>
           <p className="mb-2 text-xs text-muted-foreground">
-            Ordem: {pelada.list_priority_mode === "member_priority" ? "prioridade do membro" : "confirmação"} | convidados: {pelada.guest_priority_mode === "guest_added_order" ? "ordem de adição" : "agrupados no membro"}
+            Ordem dos membros: {pelada.list_priority_mode === "member_priority" ? "prioridade do membro" : "confirmação"} | ordem dos convidados: {pelada.guest_priority_mode === "guest_added_order" ? "adição" : "fila do membro (exibidos separados)"}
           </p>
           {waitingMembers.length > 0 && (
             <p className="mb-2 text-xs text-muted-foreground">Lista de espera atual: {waitingMembers.length}</p>
           )}
 
           <div className="space-y-2">
-            {sortedMembers.map((member) => {
-              const memberGuests = guestsByMember[member.id] || [];
-              const isMine = member.user_id === user.id;
-              const orderedGuests =
-                pelada.guest_priority_mode === "guest_added_order"
-                  ? [...memberGuests].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                  : memberGuests;
+            {sortedMembers.map((member) => (
+              <div key={member.id} className="rounded-md border border-border bg-secondary/50 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-7 w-7">
+                      <AvatarImage src={member.member_avatar_url || undefined} alt={member.member_name} />
+                      <AvatarFallback className="text-[11px] font-semibold">{getInitial(member.member_name)}</AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm text-foreground">
+                      {member.member_name}
+                      {member.is_goalkeeper ? " (goleiro)" : ""}
+                      {member.is_waiting ? " (espera)" : ""}
+                      {pelada.list_priority_mode === "member_priority" ? ` (prio ${member.priority_score})` : ""}
+                    </span>
+                  </div>
+                  {member.is_waiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
+                </div>
+              </div>
+            ))}
+
+            {orderedGuestEntries.map((guest) => {
+              const hostMember = members.find((member) => member.id === guest.pelada_member_id);
+              const canDelete = !!myMember && guest.pelada_member_id === myMember.id;
 
               return (
-                <div key={member.id} className="rounded-md border border-border bg-secondary/50 p-2">
+                <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-xs">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <Avatar className="h-7 w-7">
-                        <AvatarImage src={member.member_avatar_url || undefined} alt={member.member_name} />
-                        <AvatarFallback className="text-[11px] font-semibold">{getInitial(member.member_name)}</AvatarFallback>
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback className="text-[10px] font-semibold">{getInitial(guest.guest_name)}</AvatarFallback>
                       </Avatar>
-                      <span className="text-sm text-foreground">
-                        {member.member_name}
-                        {member.is_goalkeeper ? " (goleiro)" : ""}
-                        {member.is_waiting ? " (espera)" : ""}
-                        {pelada.list_priority_mode === "member_priority" ? ` (prio ${member.priority_score})` : ""}
-                      </span>
+                      <span className="text-foreground">{guest.guest_name} (convidado)</span>
                     </div>
-                    {member.is_waiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
+                    {canDelete && (
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveGuest(guest.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
-
-                  {orderedGuests.map((guest) => (
-                    <div key={guest.id} className="mt-1 flex items-center justify-between rounded bg-muted/40 px-2 py-1 text-xs">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-[10px] font-semibold">{getInitial(guest.guest_name)}</AvatarFallback>
-                        </Avatar>
-                        <span>{guest.guest_name} (convidado de {member.member_name})</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {isMine && (
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveGuest(guest.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                  <p className="mt-1 text-muted-foreground">
+                    Convidado de: {hostMember?.member_name || "participante removido"}
+                  </p>
                 </div>
               );
             })}
 
-            {members.length === 0 && <p className="py-3 text-center text-sm text-muted-foreground">Ninguém confirmou ainda</p>}
+            {members.length === 0 && guests.length === 0 && <p className="py-3 text-center text-sm text-muted-foreground">Ninguém confirmou ainda</p>}
           </div>
         </div>
 
