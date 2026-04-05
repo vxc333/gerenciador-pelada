@@ -433,6 +433,68 @@ const AdminPelada = () => {
     toast.success("Link copiado!");
   };
 
+  const formatEntryName = (entry: { kind: string } & any) => {
+    if (entry.kind === "member") return getMemberDisplayName(entry.member);
+    const guestName: string = entry.guest.guest_name || "";
+    return guestName.replace(/\s*\(goleiro\)\s*$/i, "");
+  };
+
+  const copyFormattedList = () => {
+    if (!pelada) return;
+
+    const dateObj = new Date(`${pelada.date}T00:00:00Z`);
+    const dd = String(dateObj.getUTCDate()).padStart(2, "0");
+    const mm = String(dateObj.getUTCMonth() + 1).padStart(2, "0");
+
+    const titleLine = `LISTA - ${pelada.title.toUpperCase()} - ${dd}/${mm}`;
+
+    const timeMatch = String(pelada.time || "").match(/(\d{1,2})/);
+    const hour = timeMatch ? `${timeMatch[1]} H` : String(pelada.time || "");
+    const locationLine = `${pelada.location || ""} - ${hour}`.trim();
+
+    const totalSlots = pelada.max_players || (pelada.num_teams && pelada.players_per_team ? pelada.num_teams * pelada.players_per_team : 0);
+
+    const nonGkNonWaiting = orderedListEntries.filter((e) => !e.isGoalkeeper && !e.isWaiting).map((e) => formatEntryName(e));
+    const gkList = orderedListEntries.filter((e) => e.isGoalkeeper && !e.isWaiting).map((e) => formatEntryName(e));
+    const waitList = orderedListEntries.filter((e) => e.isWaiting).map((e) => formatEntryName(e));
+
+    const lines: string[] = [];
+    lines.push(titleLine);
+    lines.push("");
+    if (locationLine) lines.push(locationLine);
+    lines.push("");
+    lines.push("Nome e sobrenome");
+    lines.push("");
+
+    for (let i = 1; i <= Math.max(totalSlots, nonGkNonWaiting.length); i += 1) {
+      const name = nonGkNonWaiting[i - 1] || "";
+      lines.push(`${i}- ${name}`);
+    }
+
+    lines.push("");
+    lines.push("GOLEIROS:");
+    lines.push("");
+    if (gkList.length === 0) {
+      lines.push("-");
+    } else {
+      gkList.forEach((gk) => lines.push(`• ${gk}`));
+    }
+
+    if (waitList.length > 0) {
+      lines.push("");
+      lines.push("LISTA DE ESPERA:");
+      lines.push("");
+      waitList.forEach((w, idx) => lines.push(`${idx + 1}- ${w}`));
+    }
+
+    const finalText = lines.join("\n");
+
+    navigator.clipboard
+      .writeText(finalText)
+      .then(() => toast.success("Lista copiada no formato solicitado"))
+      .catch(() => toast.error("Falha ao copiar a lista"));
+  };
+
   const savePeladaDetails = async () => {
     const totalPlayers = editNumTeams * editPlayersPerTeam;
 
@@ -779,6 +841,9 @@ const AdminPelada = () => {
           </Button>
           <Button onClick={handleDraw} className="flex-1 gap-2 text-sm" disabled={!!pelada.draw_done_at}>
             <Shuffle className="h-4 w-4" /> {pelada.draw_done_at ? "Sorteio finalizado" : "Fazer sorteio"}
+          </Button>
+          <Button onClick={copyFormattedList} className="flex-1 gap-2 text-sm">
+            <Download className="h-4 w-4" /> Copiar lista
           </Button>
         </div>
 
