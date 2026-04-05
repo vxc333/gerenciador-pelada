@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Shield, Trash2, ArrowLeft, Download, Link as LinkIcon } from "lucide-react";
-import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia } from "@/lib/datetime-br";
+import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia, formatDateTimeBrasiliaWithSeconds } from "@/lib/datetime-br";
 import { buildOrderedPeladaEntries, sortPeladaMembers } from "@/lib/pelada-participants";
 import { getPeladaRules } from "@/lib/pelada-rules";
 import type { Json, Tables } from "@/integrations/supabase/types";
@@ -571,6 +571,50 @@ const PublicPelada = () => {
       .catch(() => toast.error("Falha ao copiar a lista"));
   };
 
+  const exportDraw = async () => {
+    if (!pelada || !pelada.draw_done_at || !Array.isArray(pelada.draw_result)) {
+      toast.error("Nenhum sorteio registrado");
+      return;
+    }
+
+    let adminName = pelada.draw_done_by || "Desconhecido";
+    try {
+      if (pelada.draw_done_by) {
+        const { data: profile } = await supabase.from("user_profiles").select("display_name").eq("user_id", pelada.draw_done_by).maybeSingle();
+        if (profile?.display_name) adminName = profile.display_name;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const lines: string[] = [];
+    lines.push(`SORTEIO OFICIAL - ${pelada.title}`);
+    lines.push("");
+    lines.push("O sorteio foi realizado apenas uma vez.");
+    lines.push("");
+    lines.push(`Realizado em: ${formatDateTimeBrasiliaWithSeconds(pelada.draw_done_at)}`);
+    lines.push(`Realizado por: ${adminName}`);
+    lines.push("");
+
+    pelada.draw_result.forEach((team) => {
+      lines.push(`Time ${team.team}:`);
+      team.players.forEach((p) => lines.push(`- ${p}`));
+      lines.push("");
+    });
+
+    lines.push(`CONFIRMAÇÕES PELO LINK:`);
+    lines.push(`${window.location.origin}/pelada/${pelada.id}`);
+
+    const finalText = lines.join("\n");
+
+    try {
+      await navigator.clipboard.writeText(finalText);
+      toast.success("Sorteio copiado — cole no WhatsApp");
+    } catch (e) {
+      toast.error("Falha ao copiar sorteio");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="border-b border-border bg-card px-4 py-6">
@@ -830,6 +874,14 @@ const PublicPelada = () => {
           <div className="rounded-lg border border-accent/30 bg-card p-4">
             <h2 className="mb-2 font-display text-lg text-accent">SORTEIO OFICIAL</h2>
             <p className="mb-3 text-xs text-muted-foreground">Esse sorteio foi realizado apenas uma vez.</p>
+
+            {isAdmin && (
+              <div className="mb-3">
+                <Button onClick={exportDraw} className="gap-2">
+                  <Download className="h-4 w-4" /> Copiar sorteio
+                </Button>
+              </div>
+            )}
 
             {Array.isArray(pelada.draw_result) && pelada.draw_result.length > 0 ? (
               <div className="space-y-3">

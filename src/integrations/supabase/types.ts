@@ -315,6 +315,7 @@ export type Database = {
           created_at: string
           date: string
           draw_done_at: string | null
+          draw_done_by: string | null
           draw_result: Json | null
           guest_priority_mode: string
           id: string
@@ -333,6 +334,7 @@ export type Database = {
           created_at?: string
           date: string
           draw_done_at?: string | null
+          draw_done_by?: string | null
           draw_result?: Json | null
           guest_priority_mode?: string
           id?: string
@@ -351,6 +353,7 @@ export type Database = {
           created_at?: string
           date?: string
           draw_done_at?: string | null
+          draw_done_by?: string | null
           draw_result?: Json | null
           guest_priority_mode?: string
           id?: string

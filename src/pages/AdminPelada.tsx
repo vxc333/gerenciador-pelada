@@ -11,6 +11,7 @@ import {
   formatDateBrasiliaLong,
   formatDateTimeBrasilia,
   formatWeekdayDateTimeBrasilia,
+  formatDateTimeBrasiliaWithSeconds,
   fromBrasiliaDateTimeLocalInput,
   toBrasiliaDateTimeLocalInput,
 } from "@/lib/datetime-br";
@@ -795,6 +796,7 @@ const AdminPelada = () => {
       .update({
         draw_done_at: new Date().toISOString(),
         draw_result: teams,
+        draw_done_by: user.id,
       })
       .eq("id", pelada.id)
       .is("draw_done_at", null);
@@ -806,6 +808,52 @@ const AdminPelada = () => {
 
     toast.success("Sorteio realizado com sucesso!");
     fetchAll();
+  };
+
+  const exportDraw = async () => {
+    if (!pelada || !pelada.draw_done_at || !Array.isArray(pelada.draw_result)) {
+      toast.error("Nenhum sorteio registrado");
+      return;
+    }
+
+    let adminName = pelada.draw_done_by || "Desconhecido";
+    if (pelada.draw_done_by && profilesByUserId[pelada.draw_done_by]?.display_name) {
+      adminName = profilesByUserId[pelada.draw_done_by].display_name;
+    } else if (pelada.draw_done_by) {
+      try {
+        const { data: profile } = await supabase.from("user_profiles").select("display_name").eq("user_id", pelada.draw_done_by).maybeSingle();
+        if (profile?.display_name) adminName = profile.display_name;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const lines: string[] = [];
+    lines.push(`SORTEIO OFICIAL - ${pelada.title}`);
+    lines.push("");
+    lines.push("O sorteio foi realizado apenas uma vez.");
+    lines.push("");
+    lines.push(`Realizado em: ${formatDateTimeBrasiliaWithSeconds(pelada.draw_done_at)}`);
+    lines.push(`Realizado por: ${adminName}`);
+    lines.push("");
+
+    pelada.draw_result.forEach((team) => {
+      lines.push(`Time ${team.team}:`);
+      team.players.forEach((p) => lines.push(`- ${p}`));
+      lines.push("");
+    });
+
+    lines.push(`CONFIRMAÇÕES PELO LINK:`);
+    lines.push(`${window.location.origin}/pelada/${pelada.id}`);
+
+    const finalText = lines.join("\n");
+
+    try {
+      await navigator.clipboard.writeText(finalText);
+      toast.success("Sorteio copiado — cole no WhatsApp");
+    } catch (e) {
+      toast.error("Falha ao copiar sorteio");
+    }
   };
 
   const formatOpenAt = () => {
@@ -1382,7 +1430,14 @@ const AdminPelada = () => {
 
         {pelada.draw_done_at && Array.isArray(pelada.draw_result) && (
           <div className="rounded-lg border border-accent/30 bg-card p-4">
-            <h2 className="mb-2 font-display text-lg text-accent">RESULTADO OFICIAL (UNICO)</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="mb-2 font-display text-lg text-accent">RESULTADO OFICIAL (UNICO)</h2>
+              <div>
+                <Button onClick={exportDraw} size="sm" className="gap-2">
+                  <Download className="h-4 w-4" /> Copiar sorteio
+                </Button>
+              </div>
+            </div>
             <div className="space-y-3">
               {pelada.draw_result.map((team) => (
                 <div key={team.team} className="rounded-md bg-secondary p-3">
