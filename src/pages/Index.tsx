@@ -712,6 +712,12 @@ const Index = () => {
             return;
         }
 
+        try {
+            localStorage.setItem(`pelada-just-left:${pelada.id}`, Date.now().toString());
+        } catch (e) {
+            // ignore
+        }
+
         toast.success("Você saiu da lista");
         fetchPeladas();
         fetchParticipationStats();

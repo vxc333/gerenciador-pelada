@@ -201,6 +201,23 @@ const PublicPelada = () => {
   useEffect(() => {
     // Auto-confirm: admins (owner or delegated) BUT NOT super admins
     const autoEnroll = async () => {
+      // Evita re-adicionar imediatamente se o usuário saiu recentemente desta pelada
+      try {
+        if (pelada) {
+          const key = `pelada-just-left:${pelada.id}`;
+          const ts = localStorage.getItem(key);
+          const SKIP_MS = 5000; // 5s
+          if (ts && Date.now() - Number(ts) < SKIP_MS) {
+            return;
+          }
+          if (ts && Date.now() - Number(ts) >= SKIP_MS) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
       if (!user || !pelada || myMember || isBanned || !preferredMemberName) return;
       if (!canAccessPelada) return;
 
@@ -227,7 +244,7 @@ const PublicPelada = () => {
         return;
       }
 
-      fetchAll();
+        fetchAll();
     };
 
     autoEnroll();
@@ -293,6 +310,12 @@ const PublicPelada = () => {
     if (!data || data.length === 0) {
       toast.error("Não foi possível remover sua confirmação");
       return;
+    }
+
+    try {
+      localStorage.setItem(`pelada-just-left:${pelada!.id}`, Date.now().toString());
+    } catch (e) {
+      // ignore
     }
 
     toast.success("Sua confirmação foi removida");
