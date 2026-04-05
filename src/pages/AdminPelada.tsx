@@ -436,7 +436,9 @@ const AdminPelada = () => {
   const formatEntryName = (entry: { kind: string } & any) => {
     if (entry.kind === "member") return getMemberDisplayName(entry.member);
     const guestName: string = entry.guest.guest_name || "";
-    return guestName.replace(/\s*\(goleiro\)\s*$/i, "");
+    const cleaned = guestName.replace(/\s*\(goleiro\)\s*$/i, "");
+    const hostName = entry.hostMember ? getMemberDisplayName(entry.hostMember) : undefined;
+    return hostName ? `${cleaned} (${hostName})` : cleaned;
   };
 
   const copyFormattedList = () => {
@@ -486,6 +488,13 @@ const AdminPelada = () => {
       lines.push("");
       waitList.forEach((w, idx) => lines.push(`${idx + 1}- ${w}`));
     }
+
+    // Public link and confirmation instruction
+    lines.push("");
+    lines.push("CONFIRMAÇÕES PELO LINK:");
+    lines.push(`${window.location.origin}/pelada/${pelada.id}`);
+    lines.push("");
+    lines.push("As confirmações devem ser feitas por esse link.");
 
     const finalText = lines.join("\n");
 
