@@ -687,6 +687,36 @@ const Index = () => {
         fetchParticipationStats();
     };
 
+    const handleLeavePelada = async (pelada: PeladaCard) => {
+        if (!pelada || !user) return;
+        if (!pelada.is_member) {
+            toast.error("Você não é membro desta pelada");
+            return;
+        }
+        // Deletar por pelada_id + user_id e checar se alguma linha foi removida
+        const { data, error } = await supabase
+            .from("pelada_members")
+            .delete()
+            .select("id")
+            .eq("pelada_id", pelada.id)
+            .eq("user_id", user.id);
+
+        if (error) {
+            toast.error("Não foi possível remover sua confirmação");
+            console.error("Erro removendo pelada_members:", error);
+            return;
+        }
+
+        if (!data || data.length === 0) {
+            toast.error("Não foi possível remover sua confirmação");
+            return;
+        }
+
+        toast.success("Você saiu da lista");
+        fetchPeladas();
+        fetchParticipationStats();
+    };
+
     const acceptJoinRequest = async (request: Tables<"pelada_join_requests">) => {
         if (!user || !request) return;
         const peladaId = request.pelada_id;
@@ -979,14 +1009,20 @@ const Index = () => {
                                 <Link to={`/pelada/${p.id}`} className="flex-1">
                                     <Button className="w-full">Abrir pelada</Button>
                                 </Link>
-                                <Button
-                                    className="w-full sm:w-auto"
-                                    variant={p.is_confirmed ? "secondary" : "default"}
-                                    disabled={!!p.is_confirmed || profileBlocked}
-                                    onClick={() => handleQuickConfirm(p)}
-                                >
-                                    {p.is_confirmed ? "Confirmado" : "Confirmar agora"}
-                                </Button>
+                                {p.is_confirmed ? (
+                                    <Button className="w-full sm:w-auto" variant="destructive" onClick={() => handleLeavePelada(p)}>
+                                        Sair da lista
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        className="w-full sm:w-auto"
+                                        variant="default"
+                                        disabled={profileBlocked}
+                                        onClick={() => handleQuickConfirm(p)}
+                                    >
+                                        Confirmar agora
+                                    </Button>
+                                )}
                             </>
                         ) : p.my_request_status === "pending" ? (
                             <Button className="w-full" disabled>

@@ -276,9 +276,21 @@ const PublicPelada = () => {
 
   const handleRemoveMe = async () => {
     if (!myMember) return;
+    // Tenta remover por pelada_id + user_id para cobrir duplicatas; retorna linhas removidas
+    const { data, error } = await supabase
+      .from("pelada_members")
+      .delete()
+      .select("id")
+      .eq("pelada_id", pelada!.id)
+      .eq("user_id", user!.id);
 
-    const { error } = await supabase.from("pelada_members").delete().eq("id", myMember.id);
     if (error) {
+      toast.error("Não foi possível remover sua confirmação");
+      console.error("Erro removendo pelada_members:", error);
+      return;
+    }
+
+    if (!data || data.length === 0) {
       toast.error("Não foi possível remover sua confirmação");
       return;
     }
