@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { Shield, Trash2, ArrowLeft } from "lucide-react";
+import { Shield, Trash2, ArrowLeft, Download, Link as LinkIcon } from "lucide-react";
 import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia } from "@/lib/datetime-br";
 import { buildOrderedPeladaEntries, sortPeladaMembers } from "@/lib/pelada-participants";
 import { getPeladaRules } from "@/lib/pelada-rules";
@@ -493,6 +493,75 @@ const PublicPelada = () => {
     }
   };
 
+  const formatEntryName = (entry: { kind: string } & any) => {
+    if (entry.kind === "member") return entry.member.member_name;
+    const guestName: string = entry.guest.guest_name || "";
+    return guestName.replace(/\s*\(goleiro\)\s*$/i, "");
+  };
+
+  const copyFormattedList = () => {
+    if (!pelada) return;
+
+    const dateObj = new Date(`${pelada.date}T00:00:00Z`);
+    const dd = String(dateObj.getUTCDate()).padStart(2, "0");
+    const mm = String(dateObj.getUTCMonth() + 1).padStart(2, "0");
+
+    const titleLine = `LISTA - ${pelada.title.toUpperCase()} - ${dd}/${mm}`;
+
+    const timeMatch = String(pelada.time || "").match(/(\d{1,2})/);
+    const hour = timeMatch ? `${timeMatch[1]} H` : String(pelada.time || "");
+    const locationLine = `${pelada.location || ""} - ${hour}`.trim();
+
+    const totalSlots = pelada.max_players || (pelada.num_teams && pelada.players_per_team ? pelada.num_teams * pelada.players_per_team : 0);
+
+    const nonGkNonWaiting = orderedListEntries.filter((e) => !e.isGoalkeeper && !e.isWaiting).map((e) => formatEntryName(e));
+    const gkList = orderedListEntries.filter((e) => e.isGoalkeeper && !e.isWaiting).map((e) => formatEntryName(e));
+    const waitList = orderedListEntries.filter((e) => e.isWaiting).map((e) => {
+      const name = e.kind === "member" ? e.member.member_name : e.guest.guest_name.replace(/\s*\(goleiro\)\s*$/i, "");
+      if (e.kind === "guest") {
+        const host = e.hostMember?.member_name;
+        return host ? `${name} (${host})` : name;
+      }
+      return name;
+    });
+
+    const lines: string[] = [];
+    lines.push(titleLine);
+    lines.push("");
+    if (locationLine) lines.push(locationLine);
+    lines.push("");
+    lines.push("Nome e sobrenome");
+    lines.push("");
+
+    for (let i = 1; i <= Math.max(totalSlots, nonGkNonWaiting.length); i += 1) {
+      const name = nonGkNonWaiting[i - 1] || "";
+      lines.push(`${i}- ${name}`);
+    }
+
+    lines.push("");
+    lines.push("GOLEIROS:");
+    lines.push("");
+    if (gkList.length === 0) {
+      lines.push("-");
+    } else {
+      gkList.forEach((gk) => lines.push(`• ${gk}`));
+    }
+
+    if (waitList.length > 0) {
+      lines.push("");
+      lines.push("LISTA DE ESPERA:");
+      lines.push("");
+      waitList.forEach((w, idx) => lines.push(`${idx + 1}- ${w}`));
+    }
+
+    const finalText = lines.join("\n");
+
+    navigator.clipboard
+      .writeText(finalText)
+      .then(() => toast.success("Lista copiada no formato solicitado"))
+      .catch(() => toast.error("Falha ao copiar a lista"));
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="border-b border-border bg-card px-4 py-6">
@@ -663,6 +732,14 @@ const PublicPelada = () => {
             <p className="mb-2 text-xs text-muted-foreground">Lista de espera atual: {waitingEntries.length}</p>
           )}
 
+          <div className="mb-2 flex gap-2">
+            {isAdmin && (
+              <Button onClick={copyFormattedList} className="flex-1 gap-2 text-sm">
+                <Download className="h-4 w-4" /> Copiar lista
+              </Button>
+            )}
+          </div>
+
           <div className="rounded-md border border-border bg-secondary/30 p-2">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Participantes</p>
             <div className="space-y-2">
@@ -722,6 +799,18 @@ const PublicPelada = () => {
               {orderedListEntries.length === 0 && (
                 <p className="py-3 text-center text-sm text-muted-foreground">Sem participantes confirmados</p>
               )}
+            </div>
+          </div>
+
+          <div className="mt-3 border-t pt-3 text-xs text-muted-foreground flex items-center justify-between gap-2">
+            <div className="break-words">Link público: <a href={`${window.location.origin}/pelada/${pelada.id}`} className="text-primary underline">{`${window.location.origin}/pelada/${pelada.id}`}</a></div>
+            <div>
+              <Button variant="secondary" size="sm" onClick={() => {
+                const url = `${window.location.origin}/pelada/${pelada.id}`;
+                navigator.clipboard.writeText(url).then(() => toast.success('Link copiado!')).catch(() => toast.error('Falha ao copiar link'));
+              }}>
+                <LinkIcon className="h-4 w-4" /> Copiar link
+              </Button>
             </div>
           </div>
 
