@@ -712,10 +712,21 @@ const Index = () => {
             return;
         }
 
+        // Registra no servidor que o usuário saiu desta pelada (evita auto-reconfirmação)
         try {
-            localStorage.setItem(`pelada-just-left:${pelada.id}`, Date.now().toString());
+            const { error: upsertError } = await supabase.from("pelada_recent_leaves").upsert(
+                [
+                    {
+                        pelada_id: pelada.id,
+                        user_id: user.id,
+                        left_at: new Date().toISOString(),
+                    },
+                ],
+                { onConflict: "pelada_id,user_id" },
+            );
+            if (upsertError) console.error("Erro registrando pelada_recent_leaves:", upsertError);
         } catch (e) {
-            // ignore
+            console.error("Erro ao gravar pelada_recent_leaves:", e);
         }
 
         toast.success("Você saiu da lista");

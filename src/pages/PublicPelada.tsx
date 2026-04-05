@@ -201,21 +201,31 @@ const PublicPelada = () => {
   useEffect(() => {
     // Auto-confirm: admins (owner or delegated) BUT NOT super admins
     const autoEnroll = async () => {
-      // Evita re-adicionar imediatamente se o usuário saiu recentemente desta pelada
+      // Evita re-adicionar automaticamente se o servidor registrar uma saída recente
       try {
-        if (pelada) {
-          const key = `pelada-just-left:${pelada.id}`;
-          const ts = localStorage.getItem(key);
-          const SKIP_MS = 5000; // 5s
-          if (ts && Date.now() - Number(ts) < SKIP_MS) {
-            return;
-          }
-          if (ts && Date.now() - Number(ts) >= SKIP_MS) {
-            localStorage.removeItem(key);
+        if (pelada && user) {
+          const SKIP_MS = 72 * 60 * 60 * 1000; // 72h
+          const { data: leaveRow, error: leaveError } = await supabase
+            .from("pelada_recent_leaves")
+            .select("left_at")
+            .eq("pelada_id", pelada.id)
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (leaveError) {
+            console.error("Erro checando pelada_recent_leaves:", leaveError);
+          } else if (leaveRow && leaveRow.left_at) {
+            const leftTs = new Date(leaveRow.left_at).getTime();
+            if (Date.now() - leftTs < SKIP_MS) {
+              return;
+            } else {
+              // cleanup: remove registro antigo do servidor
+              await supabase.from("pelada_recent_leaves").delete().eq("pelada_id", pelada.id).eq("user_id", user.id);
+            }
           }
         }
       } catch (e) {
-        // ignore
+        console.error(e);
       }
 
       if (!user || !pelada || myMember || isBanned || !preferredMemberName) return;
@@ -312,10 +322,21 @@ const PublicPelada = () => {
       return;
     }
 
+    // Registra no servidor que o usuário saiu desta pelada (evita auto-reconfirmação)
     try {
-      localStorage.setItem(`pelada-just-left:${pelada!.id}`, Date.now().toString());
+      const { error: upsertError } = await supabase.from("pelada_recent_leaves").upsert(
+        [
+          {
+            pelada_id: pelada!.id,
+            user_id: user!.id,
+            left_at: new Date().toISOString(),
+          },
+        ],
+        { onConflict: "pelada_id,user_id" },
+      );
+      if (upsertError) console.error("Erro registrando pelada_recent_leaves:", upsertError);
     } catch (e) {
-      // ignore
+      console.error("Erro ao gravar pelada_recent_leaves:", e);
     }
 
     toast.success("Sua confirmação foi removida");

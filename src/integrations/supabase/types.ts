@@ -404,6 +404,32 @@ export type Database = {
           },
         ]
       }
+      pelada_recent_leaves: {
+        Row: {
+          pelada_id: string
+          user_id: string
+          left_at: string
+        }
+        Insert: {
+          pelada_id: string
+          user_id: string
+          left_at?: string
+        }
+        Update: {
+          pelada_id?: string
+          user_id?: string
+          left_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pelada_recent_leaves_pelada_id_fkey"
+            columns: ["pelada_id"]
+            isOneToOne: false
+            referencedRelation: "peladas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_profiles: {
         Row: {
           avatar_url: string | null
