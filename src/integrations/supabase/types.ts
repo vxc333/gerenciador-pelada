@@ -373,7 +373,7 @@ export type Database = {
         Row: {
           banned_at: string
           banned_by: string | null
-          expires_at: string
+          expires_at: string | null
           id: string
           pelada_id: string
           reason: string | null
@@ -382,7 +382,7 @@ export type Database = {
         Insert: {
           banned_at?: string
           banned_by?: string | null
-          expires_at: string
+          expires_at?: string | null
           id?: string
           pelada_id: string
           reason?: string | null
@@ -391,7 +391,7 @@ export type Database = {
         Update: {
           banned_at?: string
           banned_by?: string | null
-          expires_at?: string
+          expires_at?: string | null
           id?: string
           pelada_id?: string
           reason?: string | null

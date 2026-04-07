@@ -91,6 +91,7 @@ const AdminPelada = () => {
   const [guestPriorityMode, setGuestPriorityMode] = useState<Tables<"peladas">["guest_priority_mode"]>("grouped_with_member");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [banDaysByUser, setBanDaysByUser] = useState<Record<string, number>>({});
+  const [banPermanentByUser, setBanPermanentByUser] = useState<Record<string, boolean>>({});
   const [notFound, setNotFound] = useState(false);
   const [forbidden, setForbidden] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -165,6 +166,21 @@ const AdminPelada = () => {
     setGuests(guestsData || []);
     setJoinRequests(requestsData || []);
     setBans(bansData || []);
+    // Initialize ban controls: days and permanent flag from existing bans
+    const initialBanDays: Record<string, number> = {};
+    const initialBanPermanent: Record<string, boolean> = {};
+    (bansData || []).forEach((ban) => {
+      if (!ban) return;
+      if (ban.expires_at === null) {
+        initialBanPermanent[ban.user_id] = true;
+      } else {
+        const diffMs = new Date(ban.expires_at).getTime() - Date.now();
+        const diffDays = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+        initialBanDays[ban.user_id] = diffDays;
+      }
+    });
+    setBanDaysByUser((prev) => ({ ...initialBanDays, ...prev }));
+    setBanPermanentByUser((prev) => ({ ...initialBanPermanent, ...prev }));
     setMemberStats({});
 
     const ids = new Set<string>();
@@ -259,7 +275,7 @@ const AdminPelada = () => {
 
   const pendingRequests = useMemo(() => joinRequests.filter((request) => request.status === "pending"), [joinRequests]);
   const activeBans = useMemo(
-    () => bans.filter((ban) => new Date(ban.expires_at).getTime() > Date.now()),
+    () => bans.filter((ban) => ban.expires_at === null || new Date(ban.expires_at).getTime() > Date.now()),
     [bans]
   );
   const bannedUserIds = useMemo(() => new Set(activeBans.map((ban) => ban.user_id)), [activeBans]);
@@ -725,18 +741,28 @@ const AdminPelada = () => {
     fetchAll();
   };
 
-  const banUser = async (targetUserId: string) => {
-    const days = Math.max(1, Math.floor(banDaysByUser[targetUserId] || 7));
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + days);
+  const banUser = async (targetUserId: string, permanent = false) => {
+    let expiresAt: string | null = null;
+    let reason = "";
+
+    if (permanent) {
+      expiresAt = null;
+      reason = "Banimento permanente";
+    } else {
+      const days = Math.max(1, Math.floor(banDaysByUser[targetUserId] || 7));
+      const expiresDate = new Date();
+      expiresDate.setDate(expiresDate.getDate() + days);
+      expiresAt = expiresDate.toISOString();
+      reason = `Banido por ${days} dia(s)`;
+    }
 
     const { error } = await supabase.from("pelada_bans").upsert(
       {
         pelada_id: pelada.id,
         user_id: targetUserId,
-        reason: `Banido por ${days} dia(s)`,
+        reason,
         banned_by: user.id,
-        expires_at: expiresAt.toISOString(),
+        expires_at: expiresAt,
       },
       { onConflict: "pelada_id,user_id" }
     );
@@ -755,7 +781,7 @@ const AdminPelada = () => {
         .eq("user_id", targetUserId),
     ]);
 
-    toast.success(`Usuário banido por ${days} dia(s)`);
+    toast.success(permanent ? "Usuário banido permanentemente" : reason);
     fetchAll();
   };
 
@@ -1252,28 +1278,49 @@ const AdminPelada = () => {
                           value={member.priority_score}
                           onChange={(e) => updateMemberPriority(member.id, Number(e.target.value || 0))}
                         />
-                        <Input
-                          type="number"
-                          min={1}
-                          max={365}
-                          className="h-8 w-20"
-                          value={banDaysByUser[member.user_id] || 7}
-                          onChange={(e) =>
-                            setBanDaysByUser((prev) => ({
-                              ...prev,
-                              [member.user_id]: Number(e.target.value || 1),
-                            }))
-                          }
-                        />
-                        {bannedUserIds.has(member.user_id) ? (
-                          <Button variant="outline" size="sm" onClick={() => unbanUser(member.user_id)}>
-                            Desbanir
-                          </Button>
-                        ) : (
-                          <Button variant="destructive" size="sm" onClick={() => banUser(member.user_id)}>
-                            Banir dias
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={365}
+                            className="h-8 w-20"
+                            value={banDaysByUser[member.user_id] || 7}
+                            onChange={(e) =>
+                              setBanDaysByUser((prev) => ({
+                                ...prev,
+                                [member.user_id]: Number(e.target.value || 1),
+                              }))
+                            }
+                            disabled={!!banPermanentByUser[member.user_id]}
+                          />
+                          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={!!banPermanentByUser[member.user_id]}
+                              onChange={(e) =>
+                                setBanPermanentByUser((prev) => ({
+                                  ...prev,
+                                  [member.user_id]: e.target.checked,
+                                }))
+                              }
+                            />
+                            Permanente
+                          </label>
+
+                          {bannedUserIds.has(member.user_id) ? (
+                            <Button variant="outline" size="sm" onClick={() => unbanUser(member.user_id)}>
+                              Desbanir
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => banUser(member.user_id, !!banPermanentByUser[member.user_id])}
+                            >
+                              {banPermanentByUser[member.user_id] ? "Banir permanentemente" : "Banir dias"}
+                            </Button>
+                          )}
+                        </div>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteMember(member.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
