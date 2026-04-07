@@ -980,9 +980,11 @@ const Index = () => {
         }
     };
 
-    const activeSystemBanUserIds = useMemo(() => {
-        return new Set((systemBansData || []).filter((b) => b.expires_at === null || new Date(b.expires_at).getTime() > Date.now()).map((b) => b.user_id));
-    }, [systemBansData]);
+    const activeSystemBanUserIds = new Set(
+        (systemBansData || [])
+            .filter((b) => b.expires_at === null || new Date(b.expires_at).getTime() > Date.now())
+            .map((b) => b.user_id),
+    );
 
     const formatHistoryDate = (dateStr: string) => {
         try {

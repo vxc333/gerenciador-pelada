@@ -906,15 +906,81 @@ const AdminPelada = () => {
       return;
     }
 
+    // Busca o sorteio mais recente (qualquer admin) para evitar repetir times
+    const { data: prevDrawData } = await supabase
+      .from("peladas")
+      .select("draw_result")
+      .neq("id", pelada.id)
+      .not("draw_done_at", "is", null)
+      .order("draw_done_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const prevDraw = prevDrawData?.draw_result
+      ? parseDrawResult(prevDrawData.draw_result as Json)
+      : null;
+
+    const normName = (n: string) => n.trim().toLowerCase();
+    const prevTeamByName = new Map<string, number>();
+    if (prevDraw) {
+      for (const t of prevDraw) {
+        for (const pName of t.players) {
+          prevTeamByName.set(normName(pName), t.team);
+        }
+      }
+    }
+
     const shuffled = shuffle(eligibleEntries);
-    const teams = Array.from({ length: pelada.num_teams }, (_, idx) => ({
+    const numTeams = pelada.num_teams;
+    const maxSize = Math.ceil(shuffled.length / numTeams);
+
+    const teams = Array.from({ length: numTeams }, (_, idx) => ({
       team: idx + 1,
       players: [] as string[],
     }));
 
-    shuffled.forEach((name, index) => {
-      teams[index % pelada.num_teams].players.push(name);
-    });
+    for (const playerName of shuffled) {
+      const prevTeam = prevTeamByName.get(normName(playerName));
+
+      let bestIdx = -1;
+      let bestScore = Infinity;
+
+      // Primeira passagem: respeita maxSize
+      for (let t = 0; t < numTeams; t++) {
+        if (teams[t].players.length >= maxSize) continue;
+        let conflicts = 0;
+        if (prevTeam !== undefined) {
+          for (const existing of teams[t].players) {
+            if (prevTeamByName.get(normName(existing)) === prevTeam) conflicts++;
+          }
+        }
+        const score = conflicts * (shuffled.length + 1) + teams[t].players.length;
+        if (score < bestScore) {
+          bestScore = score;
+          bestIdx = t;
+        }
+      }
+
+      // Fallback para quando todos os times já estão no limite
+      if (bestIdx === -1) {
+        bestScore = Infinity;
+        for (let t = 0; t < numTeams; t++) {
+          let conflicts = 0;
+          if (prevTeam !== undefined) {
+            for (const existing of teams[t].players) {
+              if (prevTeamByName.get(normName(existing)) === prevTeam) conflicts++;
+            }
+          }
+          const score = conflicts * (shuffled.length + 1) + teams[t].players.length;
+          if (score < bestScore) {
+            bestScore = score;
+            bestIdx = t;
+          }
+        }
+      }
+
+      teams[bestIdx].players.push(playerName);
+    }
 
     const { error } = await supabase
       .from("peladas")
