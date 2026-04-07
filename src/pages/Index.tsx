@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -166,6 +166,11 @@ const Index = () => {
     const [activeSection, setActiveSection] = useState<DashboardSection>("resumo");
     const [membersData, setMembersData] = useState<Tables<"pelada_members">[]>([]);
     const [profilesByUserId, setProfilesByUserId] = useState<Record<string, Tables<"user_profiles">>>({});
+    const [bansData, setBansData] = useState<Tables<"pelada_bans">[]>([]);
+    const [banDaysByUser, setBanDaysByUser] = useState<Record<string, number>>({});
+    const [banPermanentByUser, setBanPermanentByUser] = useState<Record<string, boolean>>({});
+    const [systemBansData, setSystemBansData] = useState<Tables<"system_bans">[]>([]);
+    const [banApplyAllByUser, setBanApplyAllByUser] = useState<Record<string, boolean>>({});
     const [managedPeladas, setManagedPeladas] = useState<PeladaCard[]>([]);
     const [joinRequests, setJoinRequests] = useState<Tables<"pelada_join_requests">[]>([]);
     const [systemAccepted, setSystemAccepted] = useState<
@@ -342,11 +347,11 @@ const Index = () => {
             managedIds.length > 0
                 ? supabase
                       .from("pelada_bans")
-                      .select("id,pelada_id,reason,banned_at")
+                      .select("id,pelada_id,user_id,reason,banned_at,expires_at")
                       .in("pelada_id", managedIds)
                       .order("banned_at", { ascending: false })
                       .limit(40)
-                : Promise.resolve({ data: [] as Array<{ id: string; pelada_id: string; reason: string; banned_at: string }> }),
+                : Promise.resolve({ data: [] as Array<{ id: string; pelada_id: string; reason: string; banned_at: string; user_id?: string; expires_at?: string }> }),
         ]);
 
         // keep a local copy of requests so the "Membros" tab can render pending/rejected lists
@@ -379,16 +384,17 @@ const Index = () => {
             },
         );
 
-        const banEvents: NotificationEvent[] = (bansEventsRes.data || []).map(
-            (row: { id: string; pelada_id: string; reason: string; banned_at: string }) => ({
-                id: `ban-${row.id}`,
-                type: "ban",
-                peladaId: row.pelada_id,
-                peladaTitle: titlesById.get(row.pelada_id) || "Pelada",
-                message: `Banimento registrado (${row.reason || "sem motivo"})`,
-                at: row.banned_at,
-            }),
-        );
+        const bansRows = (bansEventsRes.data || []) as Tables<"pelada_bans">[];
+        setBansData(bansRows);
+
+        const banEvents: NotificationEvent[] = (bansRows || []).map((row) => ({
+            id: `ban-${row.id}`,
+            type: "ban",
+            peladaId: row.pelada_id,
+            peladaTitle: titlesById.get(row.pelada_id) || "Pelada",
+            message: `Banimento registrado (${row.reason || "sem motivo"})`,
+            at: row.banned_at,
+        }));
 
         const drawEvents: NotificationEvent[] = (allData || [])
             .filter((pelada) => !!pelada.draw_done_at && managedPeladaIds.has(pelada.id))
@@ -424,6 +430,32 @@ const Index = () => {
                     profileMap[profile.user_id] = profile;
                 });
                 setProfilesByUserId(profileMap);
+
+                // Fetch system-wide bans for these members
+                try {
+                    const { data: systemBans } = await supabase.from("system_bans").select("*").in("user_id", Array.from(memberUserIds));
+                    setSystemBansData(systemBans || []);
+
+                    const initialApplyAll: Record<string, boolean> = {};
+                    const initialDays: Record<string, number> = {};
+                    const initialPermanent: Record<string, boolean> = {};
+                    (systemBans || []).forEach((sb) => {
+                        if (!sb) return;
+                        if (sb.expires_at === null) {
+                            initialApplyAll[sb.user_id] = true;
+                            initialPermanent[sb.user_id] = true;
+                        } else if (new Date(sb.expires_at).getTime() > Date.now()) {
+                            initialApplyAll[sb.user_id] = true;
+                            const diffMs = new Date(sb.expires_at).getTime() - Date.now();
+                            initialDays[sb.user_id] = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+                        }
+                    });
+                    setBanApplyAllByUser((prev) => ({ ...initialApplyAll, ...prev }));
+                    setBanDaysByUser((prev) => ({ ...initialDays, ...prev }));
+                    setBanPermanentByUser((prev) => ({ ...initialPermanent, ...prev }));
+                } catch (e) {
+                    // ignore
+                }
             }
         } else {
             setMembersData([]);
@@ -809,6 +841,117 @@ const Index = () => {
         fetchPeladas();
     };
 
+    const isUserBannedInPelada = (peladaId: string, userId: string | undefined) => {
+        if (!userId) return false;
+        const peladaBan = (bansData || []).some((b) => b.pelada_id === peladaId && b.user_id === userId && (b.expires_at === null || new Date(b.expires_at).getTime() > Date.now()));
+        const systemBan = (systemBansData || []).some((b) => b.user_id === userId && (b.expires_at === null || new Date(b.expires_at).getTime() > Date.now()));
+        return peladaBan || systemBan;
+    };
+
+    const getBanInfo = (peladaId: string | undefined, userId: string | undefined) => {
+        if (!userId) return null;
+        const now = Date.now();
+        const p = (bansData || []).find((b) => b.pelada_id === peladaId && b.user_id === userId && (b.expires_at === null || new Date(b.expires_at).getTime() > now));
+        if (p) return { source: "pelada", expires_at: p.expires_at };
+        const s = (systemBansData || []).find((b) => b.user_id === userId && (b.expires_at === null || new Date(b.expires_at).getTime() > now));
+        if (s) return { source: "system", expires_at: s.expires_at };
+        return null;
+    };
+
+    const banUser = async (peladaId: string, targetUserId: string, permanent = false, applyToAll = false) => {
+        if (!user) return;
+
+        let expiresAt: string | null = null;
+        let reason = "";
+
+        if (permanent) {
+            expiresAt = null;
+            reason = "Banimento permanente";
+        } else {
+            const days = Math.max(1, Math.floor(banDaysByUser[targetUserId] || 7));
+            const expiresDate = new Date();
+            expiresDate.setDate(expiresDate.getDate() + days);
+            expiresAt = expiresDate.toISOString();
+            reason = `Banido por ${days} dia(s)`;
+        }
+
+        let error = null;
+        if (applyToAll) {
+            const res = await supabase.from("system_bans").upsert(
+                {
+                    user_id: targetUserId,
+                    reason,
+                    banned_by: user.id,
+                    expires_at: expiresAt,
+                },
+                { onConflict: "user_id" },
+            );
+            // @ts-ignore
+            error = res.error;
+        } else {
+            const res = await supabase.from("pelada_bans").upsert(
+                {
+                    pelada_id: peladaId,
+                    user_id: targetUserId,
+                    reason,
+                    banned_by: user.id,
+                    expires_at: expiresAt,
+                },
+                { onConflict: "pelada_id,user_id" },
+            );
+            // @ts-ignore
+            error = res.error;
+        }
+
+        if (error) {
+            toast.error(applyToAll ? "Não foi possível aplicar banimento global" : "Não foi possível banir o usuário");
+            return;
+        }
+
+        if (applyToAll) {
+            await Promise.all([
+                supabase.from("pelada_members").delete().eq("user_id", targetUserId),
+                supabase
+                    .from("pelada_join_requests")
+                    .update({ status: "rejected", reviewed_by: user.id, reviewed_at: new Date().toISOString() })
+                    .eq("user_id", targetUserId),
+            ]);
+        } else {
+            await Promise.all([
+                supabase.from("pelada_members").delete().eq("pelada_id", peladaId).eq("user_id", targetUserId),
+                supabase
+                    .from("pelada_join_requests")
+                    .update({ status: "rejected", reviewed_by: user.id, reviewed_at: new Date().toISOString() })
+                    .eq("pelada_id", peladaId)
+                    .eq("user_id", targetUserId),
+            ]);
+        }
+
+        toast.success(permanent ? "Usuário banido permanentemente" : reason);
+        fetchPeladas();
+    };
+
+    const unbanUser = async (peladaId: string, targetUserId: string, applyToAll = false) => {
+        let error = null;
+        if (applyToAll) {
+            const res = await supabase.from("system_bans").delete().eq("user_id", targetUserId);
+            // @ts-ignore
+            error = res.error;
+        } else {
+            const res = await supabase.from("pelada_bans").delete().eq("pelada_id", peladaId).eq("user_id", targetUserId);
+            // @ts-ignore
+            error = res.error;
+        }
+
+        if (error) {
+            toast.error("Não foi possível remover banimento");
+            return;
+        }
+
+        toast.success("Banimento removido");
+        fetchPeladas();
+    };
+
     // Global lists of requests (used in Members panel)
     const pendingGlobalRequests = (joinRequests || []).filter((r) => r.status === "pending");
     const rejectedGlobalRequests = (joinRequests || []).filter((r) => r.status === "rejected");
@@ -836,6 +979,10 @@ const Index = () => {
             return dateTime;
         }
     };
+
+    const activeSystemBanUserIds = useMemo(() => {
+        return new Set((systemBansData || []).filter((b) => b.expires_at === null || new Date(b.expires_at).getTime() > Date.now()).map((b) => b.user_id));
+    }, [systemBansData]);
 
     const formatHistoryDate = (dateStr: string) => {
         try {
@@ -1140,65 +1287,79 @@ const Index = () => {
                     <aside className="hidden lg:block">
                         <div className="sticky top-5 rounded-lg border border-border bg-card p-3">
                             <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Navegação</p>
-                            <div className="space-y-1">
-                                {navItems
-                                    .filter((item) => item.show)
-                                    .map((item) => {
-                                        const Icon = item.icon;
-                                        return (
-                                            <Button
-                                                key={item.key}
-                                                variant={activeSection === item.key ? "secondary" : "ghost"}
-                                                className="w-full justify-start"
-                                                onClick={() => setActiveSection(item.key)}
-                                            >
-                                                <Icon className="mr-2 h-4 w-4" />
-                                                {item.label}
-                                            </Button>
-                                        );
-                                    })}
-                            </div>
-                        </div>
-                    </aside>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    {((pelada && (pelada.is_admin || isSuperAdmin)) || isSuperAdmin) ? (
+                                                                                        <>
+                                                                                            <Input
+                                                                                                type="number"
+                                                                                                min={1}
+                                                                                                max={365}
+                                                                                                className="h-8 w-20"
+                                                                                                value={banDaysByUser[c.user_id] || 7}
+                                                                                                onChange={(e) =>
+                                                                                                    setBanDaysByUser((prev) => ({
+                                                                                                        ...prev,
+                                                                                                        [c.user_id]: Number(e.target.value || 1),
+                                                                                                    }))
+                                                                                                }
+                                                                                                disabled={!!banPermanentByUser[c.user_id]}
+                                                                                            />
 
-                    <div>
-                        {activeSection === "resumo" && (
-                            <div className="mb-6 rounded-lg border border-border bg-card p-4 sm:p-6">
-                                <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <div>
-                                        <h2 className="font-display text-xl text-foreground">PAINEL</h2>
-                                        <p className="text-sm text-muted-foreground">Gerencie seu perfil e crie novas peladas por modal.</p>
-                                    </div>
+                                                                                            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                                                                <input
+                                                                                                    type="checkbox"
+                                                                                                    checked={!!banPermanentByUser[c.user_id]}
+                                                                                                    onChange={(e) =>
+                                                                                                        setBanPermanentByUser((prev) => ({
+                                                                                                            ...prev,
+                                                                                                            [c.user_id]: e.target.checked,
+                                                                                                        }))
+                                                                                                    }
+                                                                                                />
+                                                                                                Permanente
+                                                                                            </label>
 
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        {isSuperAdmin && (
-                                            <span className="rounded-full bg-accent/20 px-3 py-1 text-xs font-medium text-accent">
-                                                admin supremo
-                                            </span>
-                                        )}
+                                                                                            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                                                                <input
+                                                                                                    type="checkbox"
+                                                                                                    checked={!!banApplyAllByUser[c.user_id]}
+                                                                                                    onChange={(e) =>
+                                                                                                        setBanApplyAllByUser((prev) => ({
+                                                                                                            ...prev,
+                                                                                                            [c.user_id]: e.target.checked,
+                                                                                                        }))
+                                                                                                    }
+                                                                                                    disabled={!isSuperAdmin}
+                                                                                                />
+                                                                                                Aplicar a todas peladas
+                                                                                            </label>
 
-                                        <Dialog open={profileModalOpen} onOpenChange={setProfileModalOpen}>
-                                            <DialogTrigger asChild>
-                                                <Button variant="outline" className="gap-2">
-                                                    <Camera className="h-4 w-4" />
-                                                    Meu perfil
-                                                </Button>
-                                            </DialogTrigger>
-                                            <DialogContent className="sm:max-w-xl">
-                                                <DialogHeader>
-                                                    <DialogTitle>Meu perfil</DialogTitle>
-                                                    <DialogDescription>
-                                                        Defina seu nome e foto. Sem foto, o avatar usa a inicial.
-                                                    </DialogDescription>
-                                                </DialogHeader>
-
-                                                {profileBlocked && (
-                                                    <div className="rounded-md border border-primary/30 bg-primary/10 p-3 text-xs text-primary">
-                                                        Complete seu nome para continuar usando o sistema.
-                                                    </div>
-                                                )}
-
-                                                <div className="flex items-center gap-3">
+                                                                                            {isBanned ? (
+                                                                                                <Button variant="outline" size="sm" onClick={() => unbanUser(pelada.id, c.user_id, !!activeSystemBanUserIds.has(c.user_id))}>
+                                                                                                    Desbanir
+                                                                                                </Button>
+                                                                                            ) : (
+                                                                                                <Button
+                                                                                                    variant="destructive"
+                                                                                                    size="sm"
+                                                                                                    onClick={() => banUser(pelada.id, c.user_id, !!banPermanentByUser[c.user_id], !!banApplyAllByUser[c.user_id])}
+                                                                                                >
+                                                                                                    {banPermanentByUser[c.user_id] ? "Banir permanentemente" : "Banir"}
+                                                                                                </Button>
+                                                                                            )}
+                                                                                        </>
+                                                                                    ) : (
+                                                                                        (() => {
+                                                                                            const info = getBanInfo(pelada.id, c.user_id);
+                                                                                            if (!info) return null;
+                                                                                            if (info.expires_at === null) {
+                                                                                                return <span className="text-xs text-destructive">Banido permanentemente</span>;
+                                                                                            }
+                                                                                            const remaining = Math.max(1, Math.ceil((new Date(info.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+                                                                                            return <span className="text-xs text-muted-foreground">Banido: {remaining} dia(s) restantes</span>;
+                                                                                        })()
+                                                                                    )}
+                                                                                </div>
                                                     <Avatar className="h-14 w-14 border border-border">
                                                         <AvatarImage src={avatarUrl || undefined} alt="Foto de perfil" />
                                                         <AvatarFallback className="font-semibold">{getInitial(profileName)}</AvatarFallback>
@@ -1699,33 +1860,95 @@ const Index = () => {
                                                                 <p className="text-xs text-muted-foreground">Ninguém confirmou ainda</p>
                                                             ) : (
                                                                 <div className="space-y-2">
-                                                                    {confirmedArray.map((c) => (
-                                                                        <div
-                                                                            key={c.user_id}
-                                                                            className="flex items-center justify-between rounded-md border border-border bg-secondary/30 p-2"
-                                                                        >
-                                                                            <div className="flex items-center gap-2 flex-1">
-                                                                                <Avatar className="h-6 w-6">
-                                                                                    <AvatarImage
-                                                                                        src={c.member_avatar_url || undefined}
-                                                                                        alt={c.member_name}
+                                                                    {confirmedArray.map((c) => {
+                                                                        const isBanned = isUserBannedInPelada(pelada.id, c.user_id);
+                                                                        return (
+                                                                            <div
+                                                                                key={c.user_id}
+                                                                                className="flex items-center justify-between rounded-md border border-border bg-secondary/30 p-2"
+                                                                            >
+                                                                                <div className="flex items-center gap-2 flex-1">
+                                                                                    <Avatar className="h-6 w-6">
+                                                                                        <AvatarImage
+                                                                                            src={c.member_avatar_url || undefined}
+                                                                                            alt={c.member_name}
+                                                                                        />
+                                                                                        <AvatarFallback className="text-xs">
+                                                                                            {getInitial(c.member_name)}
+                                                                                        </AvatarFallback>
+                                                                                    </Avatar>
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <p className="text-sm text-foreground truncate">
+                                                                                            {c.member_name}
+                                                                                        </p>
+                                                                                        <p className="text-xs text-muted-foreground">
+                                                                                            Última: {formatHistoryDate(c.lastConfirmedAt)} • {c.count}x
+                                                                                        </p>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <Input
+                                                                                        type="number"
+                                                                                        min={1}
+                                                                                        max={365}
+                                                                                        className="h-8 w-20"
+                                                                                        value={banDaysByUser[c.user_id] || 7}
+                                                                                        onChange={(e) =>
+                                                                                            setBanDaysByUser((prev) => ({
+                                                                                                ...prev,
+                                                                                                [c.user_id]: Number(e.target.value || 1),
+                                                                                            }))
+                                                                                        }
+                                                                                        disabled={!!banPermanentByUser[c.user_id]}
                                                                                     />
-                                                                                    <AvatarFallback className="text-xs">
-                                                                                        {getInitial(c.member_name)}
-                                                                                    </AvatarFallback>
-                                                                                </Avatar>
-                                                                                <div className="flex-1 min-w-0">
-                                                                                    <p className="text-sm text-foreground truncate">
-                                                                                        {c.member_name}
-                                                                                    </p>
-                                                                                    <p className="text-xs text-muted-foreground">
-                                                                                        Última: {formatHistoryDate(c.lastConfirmedAt)} •{" "}
-                                                                                        {c.count}x
-                                                                                    </p>
+
+                                                                                    <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            checked={!!banPermanentByUser[c.user_id]}
+                                                                                            onChange={(e) =>
+                                                                                                setBanPermanentByUser((prev) => ({
+                                                                                                    ...prev,
+                                                                                                    [c.user_id]: e.target.checked,
+                                                                                                }))
+                                                                                            }
+                                                                                        />
+                                                                                        Permanente
+                                                                                    </label>
+
+                                                                                        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                                                            <input
+                                                                                                type="checkbox"
+                                                                                                checked={!!banApplyAllByUser[c.user_id]}
+                                                                                                onChange={(e) =>
+                                                                                                    setBanApplyAllByUser((prev) => ({
+                                                                                                        ...prev,
+                                                                                                        [c.user_id]: e.target.checked,
+                                                                                                    }))
+                                                                                                }
+                                                                                                disabled={!isSuperAdmin}
+                                                                                            />
+                                                                                            Aplicar a todas peladas
+                                                                                        </label>
+
+                                                                                        {isBanned ? (
+                                                                                            <Button variant="outline" size="sm" onClick={() => unbanUser(pelada.id, c.user_id, !!activeSystemBanUserIds.has(c.user_id))}>
+                                                                                                Desbanir
+                                                                                            </Button>
+                                                                                        ) : (
+                                                                                            <Button
+                                                                                                variant="destructive"
+                                                                                                size="sm"
+                                                                                                onClick={() => banUser(pelada.id, c.user_id, !!banPermanentByUser[c.user_id], !!banApplyAllByUser[c.user_id])}
+                                                                                            >
+                                                                                                {banPermanentByUser[c.user_id] ? "Banir permanentemente" : "Banir"}
+                                                                                            </Button>
+                                                                                        )}
                                                                                 </div>
                                                                             </div>
-                                                                        </div>
-                                                                    ))}
+                                                                        );
+                                                                    })}
                                                                 </div>
                                                             )}
                                                         </div>

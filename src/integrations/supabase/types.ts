@@ -407,6 +407,33 @@ export type Database = {
           },
         ]
       }
+      system_bans: {
+        Row: {
+          id: string
+          user_id: string
+          banned_by: string | null
+          banned_at: string
+          expires_at: string | null
+          reason: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          banned_by?: string | null
+          banned_at?: string
+          expires_at?: string | null
+          reason?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          banned_by?: string | null
+          banned_at?: string
+          expires_at?: string | null
+          reason?: string | null
+        }
+        Relationships: []
+      }
       pelada_recent_leaves: {
         Row: {
           pelada_id: string
