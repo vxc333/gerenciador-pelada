@@ -1287,79 +1287,65 @@ const Index = () => {
                     <aside className="hidden lg:block">
                         <div className="sticky top-5 rounded-lg border border-border bg-card p-3">
                             <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Navegação</p>
-                                                                                <div className="flex items-center gap-2">
-                                                                                    {((pelada && (pelada.is_admin || isSuperAdmin)) || isSuperAdmin) ? (
-                                                                                        <>
-                                                                                            <Input
-                                                                                                type="number"
-                                                                                                min={1}
-                                                                                                max={365}
-                                                                                                className="h-8 w-20"
-                                                                                                value={banDaysByUser[c.user_id] || 7}
-                                                                                                onChange={(e) =>
-                                                                                                    setBanDaysByUser((prev) => ({
-                                                                                                        ...prev,
-                                                                                                        [c.user_id]: Number(e.target.value || 1),
-                                                                                                    }))
-                                                                                                }
-                                                                                                disabled={!!banPermanentByUser[c.user_id]}
-                                                                                            />
+                            <div className="space-y-1">
+                                {navItems
+                                    .filter((item) => item.show)
+                                    .map((item) => {
+                                        const Icon = item.icon;
+                                        return (
+                                            <Button
+                                                key={item.key}
+                                                variant={activeSection === item.key ? "secondary" : "ghost"}
+                                                className="w-full justify-start"
+                                                onClick={() => setActiveSection(item.key)}
+                                            >
+                                                <Icon className="mr-2 h-4 w-4" />
+                                                {item.label}
+                                            </Button>
+                                        );
+                                    })}
+                            </div>
+                        </div>
+                    </aside>
 
-                                                                                            <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                                                                                                <input
-                                                                                                    type="checkbox"
-                                                                                                    checked={!!banPermanentByUser[c.user_id]}
-                                                                                                    onChange={(e) =>
-                                                                                                        setBanPermanentByUser((prev) => ({
-                                                                                                            ...prev,
-                                                                                                            [c.user_id]: e.target.checked,
-                                                                                                        }))
-                                                                                                    }
-                                                                                                />
-                                                                                                Permanente
-                                                                                            </label>
+                    <div>
+                        {activeSection === "resumo" && (
+                            <div className="mb-6 rounded-lg border border-border bg-card p-4 sm:p-6">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <h2 className="font-display text-xl text-foreground">PAINEL</h2>
+                                        <p className="text-sm text-muted-foreground">Gerencie seu perfil e crie novas peladas por modal.</p>
+                                    </div>
 
-                                                                                            <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                                                                                                <input
-                                                                                                    type="checkbox"
-                                                                                                    checked={!!banApplyAllByUser[c.user_id]}
-                                                                                                    onChange={(e) =>
-                                                                                                        setBanApplyAllByUser((prev) => ({
-                                                                                                            ...prev,
-                                                                                                            [c.user_id]: e.target.checked,
-                                                                                                        }))
-                                                                                                    }
-                                                                                                    disabled={!isSuperAdmin}
-                                                                                                />
-                                                                                                Aplicar a todas peladas
-                                                                                            </label>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {isSuperAdmin && (
+                                            <span className="rounded-full bg-accent/20 px-3 py-1 text-xs font-medium text-accent">
+                                                admin supremo
+                                            </span>
+                                        )}
 
-                                                                                            {isBanned ? (
-                                                                                                <Button variant="outline" size="sm" onClick={() => unbanUser(pelada.id, c.user_id, !!activeSystemBanUserIds.has(c.user_id))}>
-                                                                                                    Desbanir
-                                                                                                </Button>
-                                                                                            ) : (
-                                                                                                <Button
-                                                                                                    variant="destructive"
-                                                                                                    size="sm"
-                                                                                                    onClick={() => banUser(pelada.id, c.user_id, !!banPermanentByUser[c.user_id], !!banApplyAllByUser[c.user_id])}
-                                                                                                >
-                                                                                                    {banPermanentByUser[c.user_id] ? "Banir permanentemente" : "Banir"}
-                                                                                                </Button>
-                                                                                            )}
-                                                                                        </>
-                                                                                    ) : (
-                                                                                        (() => {
-                                                                                            const info = getBanInfo(pelada.id, c.user_id);
-                                                                                            if (!info) return null;
-                                                                                            if (info.expires_at === null) {
-                                                                                                return <span className="text-xs text-destructive">Banido permanentemente</span>;
-                                                                                            }
-                                                                                            const remaining = Math.max(1, Math.ceil((new Date(info.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-                                                                                            return <span className="text-xs text-muted-foreground">Banido: {remaining} dia(s) restantes</span>;
-                                                                                        })()
-                                                                                    )}
-                                                                                </div>
+                                        <Dialog open={profileModalOpen} onOpenChange={setProfileModalOpen}>
+                                            <DialogTrigger asChild>
+                                                <Button variant="outline" className="gap-2">
+                                                    <Camera className="h-4 w-4" />
+                                                    Meu perfil
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent className="sm:max-w-xl">
+                                                <DialogHeader>
+                                                    <DialogTitle>Meu perfil</DialogTitle>
+                                                    <DialogDescription>
+                                                        Defina seu nome e foto. Sem foto, o avatar usa a inicial.
+                                                    </DialogDescription>
+                                                </DialogHeader>
+
+                                                {profileBlocked && (
+                                                    <div className="rounded-md border border-primary/30 bg-primary/10 p-3 text-xs text-primary">
+                                                        Complete seu nome para continuar usando o sistema.
+                                                    </div>
+                                                )}
+
+                                                <div className="flex items-center gap-3">
                                                     <Avatar className="h-14 w-14 border border-border">
                                                         <AvatarImage src={avatarUrl || undefined} alt="Foto de perfil" />
                                                         <AvatarFallback className="font-semibold">{getInitial(profileName)}</AvatarFallback>

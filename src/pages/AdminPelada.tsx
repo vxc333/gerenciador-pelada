@@ -1001,78 +1001,17 @@ const AdminPelada = () => {
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-                        <div className="flex items-center gap-2">
-                          {isCurrentUserAdminOrSuper ? (
-                            <>
-                              <Input
-                                type="number"
-                                min={1}
-                                max={365}
-                                className="h-8 w-20"
-                                value={banDaysByUser[member.user_id] || 7}
-                                onChange={(e) =>
-                                  setBanDaysByUser((prev) => ({
-                                    ...prev,
-                                    [member.user_id]: Number(e.target.value || 1),
-                                  }))
-                                }
-                                disabled={!!banPermanentByUser[member.user_id]}
-                              />
-                              <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <input
-                                  type="checkbox"
-                                  checked={!!banPermanentByUser[member.user_id]}
-                                  onChange={(e) =>
-                                    setBanPermanentByUser((prev) => ({
-                                      ...prev,
-                                      [member.user_id]: e.target.checked,
-                                    }))
-                                  }
-                                />
-                                Permanente
-                              </label>
+          <div>
+            <h1 className="font-display text-xl text-foreground">{pelada.title}</h1>
+            <p className="text-xs text-muted-foreground">Painel administrativo</p>
+          </div>
+        </div>
+      </header>
 
-                              <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <input
-                                  type="checkbox"
-                                  checked={!!banApplyAllByUser[member.user_id]}
-                                  onChange={(e) =>
-                                    setBanApplyAllByUser((prev) => ({
-                                      ...prev,
-                                      [member.user_id]: e.target.checked,
-                                    }))
-                                  }
-                                  disabled={!isSuperAdmin}
-                                />
-                                Aplicar a todas peladas
-                              </label>
-
-                              {bannedUserIds.has(member.user_id) ? (
-                                <Button variant="outline" size="sm" onClick={() => unbanUser(member.user_id, !!activeSystemBanUserIds.has(member.user_id))}>
-                                  Desbanir
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => banUser(member.user_id, !!banPermanentByUser[member.user_id], !!banApplyAllByUser[member.user_id])}
-                                >
-                                  {banPermanentByUser[member.user_id] ? "Banir permanentemente" : "Banir dias"}
-                                </Button>
-                              )}
-                            </>
-                          ) : (
-                            (() => {
-                              const info = getBanInfo(pelada?.id, member.user_id);
-                              if (!info) return null;
-                              if (info.expires_at === null) {
-                                return <span className="text-xs text-destructive">Banido permanentemente</span>;
-                              }
-                              const remaining = Math.max(1, Math.ceil((new Date(info.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-                              return <span className="text-xs text-muted-foreground">Banido: {remaining} dia(s) restantes</span>;
-                            })()
-                          )}
-                        </div>
+      <main className="container mx-auto space-y-4 px-4 py-6">
+        {activeMenu === "config" && (
+        <>
+        <div className="rounded-lg border border-border bg-card p-4">
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
