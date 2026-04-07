@@ -187,6 +187,14 @@ const Index = () => {
             setPeladaHistory(history);
         } catch (error) {
             console.error("Error fetching participation stats:", error);
+            setParticipationStats({
+                totalParticipated: 0,
+                totalConfirmed: 0,
+                totalNoShow: 0,
+                confirmationRate: 0,
+                badges: [],
+            });
+            setPeladaHistory([]);
         } finally {
             setLoadingStats(false);
         }
@@ -282,10 +290,27 @@ const Index = () => {
             }, new Map<string, number>());
         }
 
-        const myEnriched = (await enrichWithCounts(myData || [])).map((pelada) => ({
+        const now = new Date();
+
+        const activeMyPeladas = (myData || []).filter((pelada) => {
+            const start = parsePeladaStartLocal(pelada.date, pelada.time);
+            if (!start) return true;
+            return start.getTime() + TWO_HOURS_MS > now.getTime();
+        });
+
+        const myEnriched = (await enrichWithCounts(activeMyPeladas)).map((pelada) => ({
             ...pelada,
             pending_requests_count: pendingByPelada.get(pelada.id) || 0,
         }));
+
+        myEnriched.sort((a, b) => {
+            const aStart = parsePeladaStartLocal(a.date, a.time);
+            const bStart = parsePeladaStartLocal(b.date, b.time);
+            if (aStart && bStart) return aStart.getTime() - bStart.getTime();
+            if (aStart) return -1;
+            if (bStart) return 1;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        });
 
         if (myEnriched.length > 0) {
             const last = myEnriched[0];
@@ -298,7 +323,6 @@ const Index = () => {
         }
 
         // Filter available peladas: exclude those already happened (start + 2h <= now)
-        const now = new Date();
         const availableBase = (allData || [])
             .filter((pelada) => pelada.user_id !== user.id)
             .filter((pelada) => {
@@ -524,11 +548,23 @@ const Index = () => {
 
         setMyPeladas(myEnriched);
         // também inclua peladas onde o usuário é admin delegado
-        const delegatedList = (allData || []).filter(
-            (p) => delegatedAdminPeladaIds.has(p.id) && !(myData || []).some((mp) => mp.id === p.id),
-        );
+        const delegatedList = (allData || [])
+            .filter((p) => delegatedAdminPeladaIds.has(p.id) && !(myData || []).some((mp) => mp.id === p.id))
+            .filter((p) => {
+                const start = parsePeladaStartLocal(p.date, p.time);
+                if (!start) return true;
+                return start.getTime() + TWO_HOURS_MS > now.getTime();
+            });
         const delegatedEnriched = delegatedList.length > 0 ? await enrichWithCounts(delegatedList) : [];
-        setManagedPeladas([...myEnriched, ...delegatedEnriched]);
+        const mergedManaged = [...myEnriched, ...delegatedEnriched].sort((a, b) => {
+            const aStart = parsePeladaStartLocal(a.date, a.time);
+            const bStart = parsePeladaStartLocal(b.date, b.time);
+            if (aStart && bStart) return aStart.getTime() - bStart.getTime();
+            if (aStart) return -1;
+            if (bStart) return 1;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        });
+        setManagedPeladas(mergedManaged);
         setAvailablePeladas(decoratedAvailable);
         setFetching(false);
     }, [user, enrichWithCounts]);

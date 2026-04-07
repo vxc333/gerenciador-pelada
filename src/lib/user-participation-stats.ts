@@ -219,13 +219,14 @@ export async function getUserPeladaHistory(userId: string, limit: number = 20) {
   if (!userId) return [];
   
   const now = new Date();
+  const fetchLimit = Math.min(Math.max(limit * 4, 40), 200);
 
   const { data: history, error } = await supabase
     .from("pelada_members")
     .select("id, pelada_id, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(fetchLimit);
 
   if (error) {
     console.error("Error fetching pelada history:", error);
@@ -249,7 +250,7 @@ export async function getUserPeladaHistory(userId: string, limit: number = 20) {
 
   const peladasMap = new Map((peladas as Array<any>).map((p) => [p.id, p]));
 
-  return (history as unknown as Array<{ pelada_id?: string; id?: string; created_at?: string }>)
+  const mappedHistory = (history as unknown as Array<{ pelada_id?: string; id?: string; created_at?: string }>)
     .map((entry) => {
       const pelada = peladasMap.get(entry.pelada_id);
       if (!pelada) return null;
@@ -267,7 +268,23 @@ export async function getUserPeladaHistory(userId: string, limit: number = 20) {
         status: "confirmed" as const,
         confirmed: true,
         createdAt: entry.created_at || new Date().toISOString(),
+        sortAt: happeningDate.getTime(),
       };
     })
-    .filter(Boolean);
+    .filter(Boolean) as Array<{
+      id: string;
+      peladaId: string;
+      peladaTitle: string;
+      peladaDate: string;
+      peladaLocation: string;
+      status: "confirmed";
+      confirmed: true;
+      createdAt: string;
+      sortAt: number;
+    }>;
+
+  return mappedHistory
+    .sort((a, b) => b.sortAt - a.sortAt)
+    .slice(0, limit)
+    .map(({ sortAt, ...rest }) => rest);
 }
