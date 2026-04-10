@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { Shield, Trash2, ArrowLeft, Download, Link as LinkIcon } from "lucide-react";
+import { Shield, Trash2, ArrowLeft, Download, Link as LinkIcon, Check, X } from "lucide-react";
 import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia, formatDateTimeBrasiliaWithSeconds } from "@/lib/datetime-br";
 import { buildOrderedPeladaEntries, sortPeladaMembers, type PeladaListEntry } from "@/lib/pelada-participants";
 import { getPeladaRules } from "@/lib/pelada-rules";
@@ -179,6 +179,7 @@ const PublicPelada = () => {
 
   const myMember = useMemo(() => members.find((m) => m.user_id === user?.id), [members, user?.id]);
   const isAdmin = !!user && !!pelada && (pelada.user_id === user.id || isDelegatedAdmin);
+  const canManagePelada = !!user && !!pelada && (pelada.user_id === user.id || isDelegatedAdmin || isSuperAdmin);
   const approvedMember = myJoinRequest?.status === "approved";
   const canAccessPelada = !isBanned && (isAdmin || approvedMember || isAutomaticMember);
   const profileHasName = !!myProfile?.display_name?.trim();
@@ -449,12 +450,49 @@ const PublicPelada = () => {
     fetchAll();
   };
 
+  const reviewGuestRequest = async (guestId: string, status: "approved" | "rejected") => {
+    if (!canManagePelada || !user) return;
+
+    const now = new Date().toISOString();
+    const payload =
+      status === "approved"
+        ? {
+            approval_status: "approved",
+            approved_by: user.id,
+            approved_at: now,
+            rejected_by: null,
+            rejected_at: null,
+          }
+        : {
+            approval_status: "rejected",
+            rejected_by: user.id,
+            rejected_at: now,
+            approved_by: null,
+            approved_at: null,
+          };
+
+    const { error } = await supabase
+      .from("pelada_member_guests")
+      .update(payload)
+      .eq("id", guestId)
+      .eq("approval_status", "pending");
+
+    if (error) {
+      toast.error("Não foi possível revisar o convidado");
+      return;
+    }
+
+    toast.success(status === "approved" ? "Convidado aprovado" : "Convidado recusado");
+    fetchAll();
+  };
+
   const sortedMembers = useMemo(() => {
     if (!pelada) return [];
     return sortPeladaMembers(members, pelada.list_priority_mode);
   }, [members, pelada]);
 
   const approvedGuests = useMemo(() => guests.filter((guest) => guest.approval_status === "approved"), [guests]);
+  const pendingGuestRequests = useMemo(() => guests.filter((guest) => guest.approval_status === "pending"), [guests]);
 
   const myGuests = useMemo(() => {
     if (!myMember) return [];
@@ -645,7 +683,7 @@ const PublicPelada = () => {
             <p className="mt-2 text-sm text-muted-foreground">{pelada.location} • Horário: {pelada.time}</p>
             <p className="mt-1 text-xs text-muted-foreground">{formatGameDate()}</p>
           </div>
-          {isAdmin && (
+          {canManagePelada && (
             <Link to={`/admin/${id}`}>
               <Button variant="outline" size="icon" className="relative h-8 w-8 text-muted-foreground hover:text-primary">
                 <Shield className="h-5 w-5" />
@@ -816,6 +854,43 @@ const PublicPelada = () => {
             </div>
           )}
         </div>
+
+        {canManagePelada && (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h2 className="mb-2 font-display text-lg text-foreground">APROVAR CONVIDADOS</h2>
+            <p className="mb-3 text-xs text-muted-foreground">Essa área aparece só para admins. Os convidados entram na lista apenas depois da aprovação.</p>
+
+            <div className="space-y-2">
+              {pendingGuestRequests.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Sem convidados pendentes de aprovação.</p>
+              ) : (
+                pendingGuestRequests.map((guest) => {
+                  const hostMember = members.find((member) => member.id === guest.pelada_member_id);
+                  const hostName = hostMember?.member_name || "responsável removido";
+
+                  return (
+                    <div key={guest.id} className="rounded-md border border-border bg-secondary/40 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm text-foreground">{guest.guest_name}</p>
+                          <p className="text-xs text-muted-foreground">Responsável: {hostName}</p>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button size="sm" onClick={() => reviewGuestRequest(guest.id, "approved")} className="gap-1">
+                            <Check className="h-3.5 w-3.5" /> Aprovar
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => reviewGuestRequest(guest.id, "rejected")} className="gap-1">
+                            <X className="h-3.5 w-3.5" /> Recusar
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-3 font-display text-lg text-foreground">LISTA</h2>
