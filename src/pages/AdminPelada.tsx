@@ -320,6 +320,8 @@ const AdminPelada = () => {
   );
 
   const pendingRequests = useMemo(() => joinRequests.filter((request) => request.status === "pending"), [joinRequests]);
+  const pendingGuestRequests = useMemo(() => guests.filter((guest) => guest.approval_status === "pending"), [guests]);
+  const approvedGuests = useMemo(() => guests.filter((guest) => guest.approval_status === "approved"), [guests]);
   const activePeladaBans = useMemo(
     () => bans.filter((ban) => ban.expires_at === null || new Date(ban.expires_at).getTime() > Date.now()),
     [bans]
@@ -395,8 +397,8 @@ const AdminPelada = () => {
 
   const orderedListEntries = useMemo(() => {
     if (!pelada) return [];
-    return buildOrderedPeladaEntries(pelada, members, guests);
-  }, [guests, members, pelada]);
+    return buildOrderedPeladaEntries(pelada, members, approvedGuests);
+  }, [approvedGuests, members, pelada]);
 
   const eligibleEntries = useMemo(() => {
     return orderedListEntries
@@ -653,6 +655,40 @@ const AdminPelada = () => {
     fetchAll();
   };
 
+  const reviewGuestRequest = async (guestId: string, status: "approved" | "rejected") => {
+    const now = new Date().toISOString();
+    const payload =
+      status === "approved"
+        ? {
+            approval_status: "approved",
+            approved_by: user.id,
+            approved_at: now,
+            rejected_by: null,
+            rejected_at: null,
+          }
+        : {
+            approval_status: "rejected",
+            rejected_by: user.id,
+            rejected_at: now,
+            approved_by: null,
+            approved_at: null,
+          };
+
+    const { error } = await supabase
+      .from("pelada_member_guests")
+      .update(payload)
+      .eq("id", guestId)
+      .eq("approval_status", "pending");
+
+    if (error) {
+      toast.error("Não foi possível revisar o convidado");
+      return;
+    }
+
+    toast.success(status === "approved" ? "Convidado aprovado" : "Convidado recusado");
+    fetchAll();
+  };
+
   const grantDelegatedAdmin = async (targetUserId: string) => {
     if (!isSuperAdmin) {
       return;
@@ -722,6 +758,18 @@ const AdminPelada = () => {
   };
 
   const deleteGuest = async (guestId: string) => {
+    const guest = guests.find((row) => row.id === guestId);
+    if (!guest) {
+      toast.error("Convidado não encontrado");
+      return;
+    }
+
+    const hostMember = members.find((row) => row.id === guest.pelada_member_id);
+    if (!hostMember || hostMember.user_id !== user.id) {
+      toast.error("Somente o responsável pode remover este convidado");
+      return;
+    }
+
     const { error } = await supabase.from("pelada_member_guests").delete().eq("id", guestId);
     if (error) {
       toast.error("Erro ao remover convidado");
@@ -786,6 +834,9 @@ const AdminPelada = () => {
       pelada_member_id: adminMember.id,
       guest_name: finalGuestName,
       admin_selected: true,
+      approval_status: "approved",
+      approved_by: user.id,
+      approved_at: new Date().toISOString(),
     });
 
     if (error) {
@@ -1056,7 +1107,7 @@ const AdminPelada = () => {
   };
 
   const totalConfiguredPlayers = Math.max(0, editNumTeams) * Math.max(0, editPlayersPerTeam);
-  const totalCurrentConfirmed = members.length + guests.length;
+  const totalCurrentConfirmed = members.length + approvedGuests.length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -1305,6 +1356,39 @@ const AdminPelada = () => {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-3 font-display text-lg text-foreground">SOLICITAÇÕES DE CONVIDADOS</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Convidados adicionados por membros entram na lista apenas após aprovação de admin.</p>
+
+          <div className="space-y-2">
+            {pendingGuestRequests.map((guest) => {
+              const hostMember = members.find((member) => member.id === guest.pelada_member_id);
+              const hostName = hostMember ? getMemberDisplayName(hostMember) : "responsável removido";
+
+              return (
+                <div key={guest.id} className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-2">
+                  <div>
+                    <p className="text-sm text-foreground">{guest.guest_name}</p>
+                    <p className="text-xs text-muted-foreground">Responsável: {hostName}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button size="sm" onClick={() => reviewGuestRequest(guest.id, "approved")} className="gap-1">
+                      <Check className="h-3.5 w-3.5" /> Aprovar
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => reviewGuestRequest(guest.id, "rejected")} className="gap-1">
+                      <X className="h-3.5 w-3.5" /> Recusar
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {pendingGuestRequests.length === 0 && (
+              <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">Sem convidados pendentes</p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-3 font-display text-lg text-foreground">ADMINS DELEGADOS</h2>
 
           <div className="space-y-2">
@@ -1362,7 +1446,7 @@ const AdminPelada = () => {
 
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-3 font-display text-lg text-foreground">SELEÇÃO PARA O JOGO</h2>
-          <p className="mb-3 text-xs text-muted-foreground">Participantes e convidados aparecem na lista. Goleiros não entram no sorteio.</p>
+          <p className="mb-3 text-xs text-muted-foreground">Participantes e convidados aprovados aparecem na lista. Goleiros não entram no sorteio.</p>
 
           <div className="mb-3 rounded-md border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
             Confirmados no total: <span className="font-semibold text-foreground">{totalCurrentConfirmed}</span> | Elegíveis para sorteio: <span className="font-semibold text-foreground">{eligibleEntries.length}</span>
@@ -1464,6 +1548,7 @@ const AdminPelada = () => {
               }
 
               const guest = entry.guest;
+              const canDeleteGuest = !!entry.hostMember && entry.hostMember.user_id === user.id;
 
               return (
                 <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-sm">
@@ -1471,11 +1556,14 @@ const AdminPelada = () => {
                     <span className="text-foreground">
                       {guest.guest_name}
                       {guest.admin_selected ? " (externo via admin)" : " (convidado)"}
+                      {guest.approval_status === "approved" ? " (aprovado)" : ""}
                       {entry.isWaiting ? " (espera)" : ""}
                     </span>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteGuest(guest.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canDeleteGuest ? (
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteGuest(guest.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    ) : null}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Vinculado a: {entry.hostMember ? getMemberDisplayName(entry.hostMember) : "participante removido"}
@@ -1484,7 +1572,7 @@ const AdminPelada = () => {
               );
             })}
 
-            {members.length === 0 && guests.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Sem confirmações ainda</p>}
+            {members.length === 0 && approvedGuests.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Sem confirmações ainda</p>}
           </div>
         </div>
         </>

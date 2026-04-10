@@ -124,12 +124,20 @@ const PublicPelada = () => {
       // Fetch pending requests if user is admin
       const isAdminHere = !!delegatedAdminRow || p.user_id === user.id || !!superAdminRow;
       if (isAdminHere) {
-        const { count } = await supabase
-          .from("pelada_join_requests")
-          .select("*", { count: "exact", head: true })
-          .eq("pelada_id", id)
-          .eq("status", "pending");
-        setPendingRequestsCount(count || 0);
+        const [{ count: joinCount }, { count: guestCount }] = await Promise.all([
+          supabase
+            .from("pelada_join_requests")
+            .select("*", { count: "exact", head: true })
+            .eq("pelada_id", id)
+            .eq("status", "pending"),
+          supabase
+            .from("pelada_member_guests")
+            .select("*", { count: "exact", head: true })
+            .eq("pelada_id", id)
+            .eq("approval_status", "pending"),
+        ]);
+
+        setPendingRequestsCount((joinCount || 0) + (guestCount || 0));
       } else {
         setPendingRequestsCount(0);
       }
@@ -382,6 +390,7 @@ const PublicPelada = () => {
       pelada_id: pelada.id,
       pelada_member_id: myMember.id,
       guest_name: finalGuestName,
+      approval_status: "pending",
     });
 
     if (error) {
@@ -391,7 +400,7 @@ const PublicPelada = () => {
 
     setGuestName("");
     setIsGuestGoalkeeper(false);
-    toast.success("Convidado adicionado");
+    toast.success("Convidado enviado para aprovação dos admins");
     fetchAll();
   };
 
@@ -445,10 +454,17 @@ const PublicPelada = () => {
     return sortPeladaMembers(members, pelada.list_priority_mode);
   }, [members, pelada]);
 
+  const approvedGuests = useMemo(() => guests.filter((guest) => guest.approval_status === "approved"), [guests]);
+
+  const myGuests = useMemo(() => {
+    if (!myMember) return [];
+    return guests.filter((guest) => guest.pelada_member_id === myMember.id);
+  }, [guests, myMember]);
+
   const orderedListEntries = useMemo(() => {
     if (!pelada) return [];
-    return buildOrderedPeladaEntries(pelada, members, guests);
-  }, [guests, members, pelada]);
+    return buildOrderedPeladaEntries(pelada, members, approvedGuests);
+  }, [approvedGuests, members, pelada]);
 
   const memberCapacity = pelada?.max_players || 0;
   const gkCapacity = pelada?.max_goalkeepers || 0;
@@ -747,7 +763,7 @@ const PublicPelada = () => {
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-2 font-display text-lg text-foreground">CONVIDADOS</h2>
           <p className="mb-3 text-xs text-muted-foreground">
-            Só você pode adicionar/remover seus convidados. Limite por membro: {rules.maxGuestsPerMember}.
+            Só você pode adicionar/remover seus convidados. Cada convidado precisa de aprovação de admin para entrar na lista principal. Limite por membro: {rules.maxGuestsPerMember}.
           </p>
           <div className="mb-3 flex gap-2">
             <Input
@@ -769,6 +785,36 @@ const PublicPelada = () => {
             </label>
           </div>
           {!myMember && <p className="text-xs text-muted-foreground">Confirme sua presença para liberar convidados.</p>}
+
+          {myMember && (
+            <div className="mt-2 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Meus convidados</p>
+              {myGuests.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Você ainda não adicionou convidados.</p>
+              ) : (
+                myGuests.map((guest) => {
+                  const statusLabel =
+                    guest.approval_status === "approved"
+                      ? "aprovado"
+                      : guest.approval_status === "rejected"
+                        ? "recusado"
+                        : "aguardando aprovação";
+
+                  return (
+                    <div key={guest.id} className="flex items-center justify-between rounded-md border border-border bg-secondary/40 px-2 py-1.5">
+                      <div>
+                        <p className="text-sm text-foreground">{guest.guest_name}</p>
+                        <p className="text-[11px] text-muted-foreground">Status: {statusLabel}</p>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRemoveGuest(guest.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
@@ -776,7 +822,7 @@ const PublicPelada = () => {
           <div className="mb-2 flex gap-2 text-xs">
             <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary">Jogadores: {memberCount}/{memberCapacity}</span>
             <span className="rounded-full bg-accent/20 px-2 py-0.5 text-accent">Goleiros: {gkCount}/{gkCapacity}</span>
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-foreground">Convidados: {guests.length}</span>
+            <span className="rounded-full bg-secondary px-2 py-0.5 text-foreground">Convidados aprovados: {approvedGuests.length}</span>
           </div>
           <p className="mb-2 text-xs text-muted-foreground">
             Membros e convidados entram na mesma lista. Ordem dos membros: {pelada.list_priority_mode === "member_priority" ? "prioridade" : "confirmação"} | convidados: {pelada.guest_priority_mode === "guest_added_order" ? "ordem de adição" : "junto do responsável"}

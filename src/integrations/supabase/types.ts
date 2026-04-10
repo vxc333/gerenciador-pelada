@@ -17,30 +17,45 @@ export type Database = {
       pelada_member_guests: {
         Row: {
           admin_selected: boolean | null
+          approval_status: string
+          approved_at: string | null
+          approved_by: string | null
           created_at: string
           guest_name: string
           id: string
           is_waiting: boolean
           pelada_id: string
           pelada_member_id: string
+          rejected_at: string | null
+          rejected_by: string | null
         }
         Insert: {
           admin_selected?: boolean | null
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           guest_name: string
           id?: string
           is_waiting?: boolean
           pelada_id: string
           pelada_member_id: string
+          rejected_at?: string | null
+          rejected_by?: string | null
         }
         Update: {
           admin_selected?: boolean | null
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           guest_name?: string
           id?: string
           is_waiting?: boolean
           pelada_id?: string
           pelada_member_id?: string
+          rejected_at?: string | null
+          rejected_by?: string | null
         }
         Relationships: [
           {
