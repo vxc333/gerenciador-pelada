@@ -15,7 +15,7 @@ import {
   fromBrasiliaDateTimeLocalInput,
   toBrasiliaDateTimeLocalInput,
 } from "@/lib/datetime-br";
-import { buildOrderedPeladaEntries, isGoalkeeperGuestName, sortPeladaMembers } from "@/lib/pelada-participants";
+import { buildOrderedPeladaEntries, isGoalkeeperGuestName, sortPeladaMembers, type PeladaListEntry } from "@/lib/pelada-participants";
 import { getPeladaRules, setPeladaRules, type PeladaRules } from "@/lib/pelada-rules";
 import type { Json, Tables } from "@/integrations/supabase/types";
 
@@ -510,7 +510,7 @@ const AdminPelada = () => {
     toast.success("Link copiado!");
   };
 
-  const formatEntryName = (entry: { kind: string } & any) => {
+  const formatEntryName = (entry: PeladaListEntry) => {
     if (entry.kind === "member") return getMemberDisplayName(entry.member);
     const guestName: string = entry.guest.guest_name || "";
     const cleaned = guestName.replace(/\s*\(goleiro\)\s*$/i, "");
@@ -876,7 +876,6 @@ const AdminPelada = () => {
         },
         { onConflict: "user_id" }
       );
-      // @ts-ignore
       error = res.error;
     } else {
       const res = await supabase.from("pelada_bans").upsert(
@@ -889,7 +888,6 @@ const AdminPelada = () => {
         },
         { onConflict: "pelada_id,user_id" }
       );
-      // @ts-ignore
       error = res.error;
     }
 
@@ -929,11 +927,9 @@ const AdminPelada = () => {
     let error = null;
     if (applyToAll) {
       const res = await supabase.from("system_bans").delete().eq("user_id", targetUserId);
-      // @ts-ignore
       error = res.error;
     } else {
       const res = await supabase.from("pelada_bans").delete().eq("pelada_id", pelada.id).eq("user_id", targetUserId);
-      // @ts-ignore
       error = res.error;
     }
 

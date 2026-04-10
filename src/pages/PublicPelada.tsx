@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Shield, Trash2, ArrowLeft, Download, Link as LinkIcon } from "lucide-react";
 import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia, formatDateTimeBrasiliaWithSeconds } from "@/lib/datetime-br";
-import { buildOrderedPeladaEntries, sortPeladaMembers } from "@/lib/pelada-participants";
+import { buildOrderedPeladaEntries, sortPeladaMembers, type PeladaListEntry } from "@/lib/pelada-participants";
 import { getPeladaRules } from "@/lib/pelada-rules";
 import type { Json, Tables } from "@/integrations/supabase/types";
 
@@ -509,7 +509,7 @@ const PublicPelada = () => {
     }
   };
 
-  const formatEntryName = (entry: { kind: string } & any) => {
+  const formatEntryName = (entry: PeladaListEntry) => {
     if (entry.kind === "member") return entry.member.member_name;
     const guestName: string = entry.guest.guest_name || "";
     const cleaned = guestName.replace(/\s*\(goleiro\)\s*$/i, "");
