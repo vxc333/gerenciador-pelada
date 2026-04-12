@@ -639,11 +639,12 @@ const AdminPelada = () => {
     fetchAll();
   };
 
-  const reviewJoinRequest = async (requestId: string, status: "approved" | "rejected") => {
+  const reviewJoinRequest = async (request: JoinRequestRow, status: "approved" | "rejected") => {
+    const reviewedAt = new Date().toISOString();
     const { error } = await supabase
       .from("pelada_join_requests")
-      .update({ status, reviewed_by: user.id, reviewed_at: new Date().toISOString() })
-      .eq("id", requestId)
+      .update({ status, reviewed_by: user.id, reviewed_at: reviewedAt })
+      .eq("id", request.id)
       .eq("status", "pending");
 
     if (error) {
@@ -651,7 +652,29 @@ const AdminPelada = () => {
       return;
     }
 
-    toast.success(status === "approved" ? "Solicitação aprovada" : "Solicitação recusada");
+    if (status === "approved") {
+      const profile = profilesByUserId[request.user_id];
+      const memberName = request.display_name || profile?.display_name || "Jogador";
+
+      const { error: upsertError } = await supabase.from("pelada_members").upsert(
+        {
+          pelada_id: request.pelada_id,
+          user_id: request.user_id,
+          member_name: memberName,
+          member_avatar_url: profile?.avatar_url || null,
+          is_goalkeeper: false,
+        },
+        { onConflict: "pelada_id,user_id" },
+      );
+
+      if (upsertError) {
+        toast.error("Solicitação aprovada, mas não foi possível confirmar o membro automaticamente");
+        fetchAll();
+        return;
+      }
+    }
+
+    toast.success(status === "approved" ? "Solicitação aprovada e membro confirmado" : "Solicitação recusada");
     fetchAll();
   };
 
@@ -1304,14 +1327,14 @@ const AdminPelada = () => {
                       Usuário banido
                     </Button>
                   ) : (
-                    <Button size="sm" onClick={() => reviewJoinRequest(request.id, "approved")} className="gap-1">
+                    <Button size="sm" onClick={() => reviewJoinRequest(request, "approved")} className="gap-1">
                       <Check className="h-3.5 w-3.5" /> Aprovar
                     </Button>
                   )}
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={() => reviewJoinRequest(request.id, "rejected")}
+                    onClick={() => reviewJoinRequest(request, "rejected")}
                     className="gap-1"
                   >
                     <X className="h-3.5 w-3.5" /> Recusar
@@ -1597,14 +1620,14 @@ const AdminPelada = () => {
                           Banido
                         </Button>
                       ) : (
-                        <Button size="sm" onClick={() => reviewJoinRequest(request.id, "approved")} className="gap-1">
+                        <Button size="sm" onClick={() => reviewJoinRequest(request, "approved")} className="gap-1">
                           <Check className="h-3.5 w-3.5" /> Aprovar
                         </Button>
                       )}
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => reviewJoinRequest(request.id, "rejected")}
+                        onClick={() => reviewJoinRequest(request, "rejected")}
                         className="gap-1"
                       >
                         <X className="h-3.5 w-3.5" /> Recusar

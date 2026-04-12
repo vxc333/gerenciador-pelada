@@ -353,8 +353,8 @@ const PublicPelada = () => {
   };
 
   const handleAddGuest = async () => {
-    if (!pelada || !myMember) {
-      toast.error("Confirme sua presença antes de adicionar convidado");
+    if (!pelada || !user) {
+      toast.error("Faça login para adicionar convidado");
       return;
     }
 
@@ -373,13 +373,48 @@ const PublicPelada = () => {
       return;
     }
 
+    let activeMember = myMember;
+
+    if (!activeMember) {
+      if (!preferredMemberName) {
+        toast.error("Complete seu perfil com nome antes de adicionar convidado");
+        return;
+      }
+
+      const { data: upsertedMember, error: ensureMemberError } = await supabase
+        .from("pelada_members")
+        .upsert(
+          {
+            pelada_id: pelada.id,
+            user_id: user.id,
+            member_name: preferredMemberName,
+            member_avatar_url: myProfile?.avatar_url || null,
+            is_goalkeeper: false,
+          },
+          { onConflict: "pelada_id,user_id" },
+        )
+        .select("*")
+        .single();
+
+      if (ensureMemberError || !upsertedMember) {
+        toast.error("Não foi possível confirmar sua presença antes de adicionar convidado");
+        return;
+      }
+
+      activeMember = upsertedMember;
+      setMembers((prev) => {
+        const withoutCurrent = prev.filter((member) => member.id !== upsertedMember.id);
+        return [...withoutCurrent, upsertedMember];
+      });
+    }
+
     const trimmed = guestName.trim();
     if (!trimmed) {
       toast.error("Informe o nome do convidado");
       return;
     }
 
-    const myGuestCount = guests.filter((guest) => guest.pelada_member_id === myMember.id).length;
+    const myGuestCount = guests.filter((guest) => guest.pelada_member_id === activeMember.id).length;
     if (myGuestCount >= rules.maxGuestsPerMember) {
       toast.error(`Limite de convidados atingido (${rules.maxGuestsPerMember})`);
       return;
@@ -389,7 +424,7 @@ const PublicPelada = () => {
 
     const { error } = await supabase.from("pelada_member_guests").insert({
       pelada_id: pelada.id,
-      pelada_member_id: myMember.id,
+      pelada_member_id: activeMember.id,
       guest_name: finalGuestName,
       approval_status: "pending",
     });
