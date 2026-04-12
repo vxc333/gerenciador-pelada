@@ -70,6 +70,10 @@ const PublicPelada = () => {
   const [notFound, setNotFound] = useState(false);
   const [rules, setRules] = useState(getPeladaRules(""));
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [systemMemberSearch, setSystemMemberSearch] = useState("");
+  const [systemMemberResults, setSystemMemberResults] = useState<UserProfileRow[]>([]);
+  const [isSearchingSystemMembers, setIsSearchingSystemMembers] = useState(false);
+  const [addingSystemMemberUserId, setAddingSystemMemberUserId] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
@@ -180,6 +184,7 @@ const PublicPelada = () => {
   const myMember = useMemo(() => members.find((m) => m.user_id === user?.id), [members, user?.id]);
   const isAdmin = !!user && !!pelada && (pelada.user_id === user.id || isDelegatedAdmin);
   const canManagePelada = !!user && !!pelada && (pelada.user_id === user.id || isDelegatedAdmin || isSuperAdmin);
+  const existingMemberUserIds = useMemo(() => new Set(members.map((member) => member.user_id)), [members]);
   const approvedMember = myJoinRequest?.status === "approved";
   const canAccessPelada = !isBanned && (isAdmin || approvedMember || isAutomaticMember);
   const profileHasName = !!myProfile?.display_name?.trim();
@@ -206,6 +211,49 @@ const PublicPelada = () => {
       setMemberName(getInitialMemberName());
     }
   }, [user, memberName, getInitialMemberName]);
+
+  useEffect(() => {
+    if (!canManagePelada) {
+      setSystemMemberResults([]);
+      setIsSearchingSystemMembers(false);
+      return;
+    }
+
+    const term = systemMemberSearch.trim();
+    if (term.length < 2) {
+      setSystemMemberResults([]);
+      setIsSearchingSystemMembers(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsSearchingSystemMembers(true);
+
+    const timer = window.setTimeout(async () => {
+      const { data, error } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .ilike("display_name", `%${term}%`)
+        .limit(12);
+
+      if (isCancelled) return;
+
+      if (error) {
+        setSystemMemberResults([]);
+        setIsSearchingSystemMembers(false);
+        return;
+      }
+
+      const filtered = (data || []).filter((profile) => !existingMemberUserIds.has(profile.user_id));
+      setSystemMemberResults(filtered);
+      setIsSearchingSystemMembers(false);
+    }, 300);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [canManagePelada, existingMemberUserIds, systemMemberSearch]);
 
   useEffect(() => {
     // Auto-confirm: admins (owner or delegated) BUT NOT super admins
@@ -488,6 +536,63 @@ const PublicPelada = () => {
     }
 
     toast.success("Solicitação enviada para os admins");
+    fetchAll();
+  };
+
+  const addSystemMemberToPelada = async (profile: UserProfileRow) => {
+    if (!pelada || !canManagePelada) return;
+
+    if (existingMemberUserIds.has(profile.user_id)) {
+      toast.error("Esse usuário já está confirmado nesta pelada");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const [{ data: peladaBan }, { data: systemBan }] = await Promise.all([
+      supabase
+        .from("pelada_bans")
+        .select("id")
+        .eq("pelada_id", pelada.id)
+        .eq("user_id", profile.user_id)
+        .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+        .maybeSingle(),
+      supabase
+        .from("system_bans")
+        .select("id")
+        .eq("user_id", profile.user_id)
+        .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+        .maybeSingle(),
+    ]);
+
+    if (peladaBan || systemBan) {
+      toast.error("Esse usuário está banido e não pode ser adicionado");
+      return;
+    }
+
+    setAddingSystemMemberUserId(profile.user_id);
+
+    const { error } = await supabase.from("pelada_members").upsert(
+      {
+        pelada_id: pelada.id,
+        user_id: profile.user_id,
+        member_name: profile.display_name,
+        member_avatar_url: profile.avatar_url,
+        is_goalkeeper: false,
+        admin_selected: true,
+      },
+      { onConflict: "pelada_id,user_id" }
+    );
+
+    setAddingSystemMemberUserId(null);
+
+    if (error) {
+      toast.error("Não foi possível adicionar o membro na pelada");
+      return;
+    }
+
+    toast.success("Membro adicionado na pelada");
+    setSystemMemberSearch("");
+    setSystemMemberResults([]);
     fetchAll();
   };
 
@@ -895,6 +1000,44 @@ const PublicPelada = () => {
             </div>
           )}
         </div>
+
+        {canManagePelada && (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h2 className="mb-3 font-display text-lg text-foreground">ADICIONAR MEMBRO DO SISTEMA</h2>
+            <p className="mb-3 text-xs text-muted-foreground">Use essa busca para confirmar alguém diretamente na lista sem depender da solicitação de entrada.</p>
+            <Input
+              placeholder="Buscar por nome do perfil"
+              value={systemMemberSearch}
+              onChange={(e) => setSystemMemberSearch(e.target.value)}
+              className="mb-3 border-border bg-secondary"
+            />
+
+            {systemMemberSearch.trim().length < 2 ? (
+              <p className="text-xs text-muted-foreground">Digite ao menos 2 letras para buscar membros do sistema.</p>
+            ) : isSearchingSystemMembers ? (
+              <p className="text-xs text-muted-foreground">Buscando membros do sistema...</p>
+            ) : systemMemberResults.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Nenhum membro disponível para adicionar.</p>
+            ) : (
+              <div className="space-y-2">
+                {systemMemberResults.map((profile) => (
+                  <div key={profile.user_id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-secondary/30 px-2 py-1.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-foreground">{profile.display_name || "Usuário sem nome"}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => addSystemMemberToPelada(profile)}
+                      disabled={addingSystemMemberUserId === profile.user_id}
+                    >
+                      {addingSystemMemberUserId === profile.user_id ? "Adicionando..." : "Adicionar"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {canManagePelada && (
           <div className="rounded-lg border border-border bg-card p-4">
