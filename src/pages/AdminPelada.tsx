@@ -114,6 +114,10 @@ const AdminPelada = () => {
     progressiveWarningHours: 24,
   });
   const [memberStats, setMemberStats] = useState<Record<string, MemberStats>>({});
+  const [systemMemberSearch, setSystemMemberSearch] = useState("");
+  const [systemMemberResults, setSystemMemberResults] = useState<UserProfileRow[]>([]);
+  const [isSearchingSystemMembers, setIsSearchingSystemMembers] = useState(false);
+  const [addingSystemMemberUserId, setAddingSystemMemberUserId] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!id || !user) return;
@@ -373,6 +377,49 @@ const AdminPelada = () => {
       };
     });
 }, [approvedRequestUserIds, delegatedAdmins, members, pelada, profilesByUserId]);
+
+  const existingMemberUserIds = useMemo(() => {
+    return new Set(members.map((member) => member.user_id));
+  }, [members]);
+
+  useEffect(() => {
+    if (activeMenu !== "membros") return;
+
+    const term = systemMemberSearch.trim();
+    if (term.length < 2) {
+      setSystemMemberResults([]);
+      setIsSearchingSystemMembers(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsSearchingSystemMembers(true);
+
+    const timer = window.setTimeout(async () => {
+      const { data, error } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .ilike("display_name", `%${term}%`)
+        .limit(12);
+
+      if (isCancelled) return;
+
+      if (error) {
+        setSystemMemberResults([]);
+        setIsSearchingSystemMembers(false);
+        return;
+      }
+
+      const filtered = (data || []).filter((profile) => !existingMemberUserIds.has(profile.user_id));
+      setSystemMemberResults(filtered);
+      setIsSearchingSystemMembers(false);
+    }, 300);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeMenu, existingMemberUserIds, systemMemberSearch]);
 
   const formatGameDate = () => {
     if (!pelada) return "";
@@ -870,6 +917,44 @@ const AdminPelada = () => {
     setExternalGuestName("");
     setExternalGuestIsGoalkeeper(false);
     toast.success("Pessoa adicionada na lista com sucesso");
+    fetchAll();
+  };
+
+  const addSystemMemberToPelada = async (profile: UserProfileRow) => {
+    if (existingMemberUserIds.has(profile.user_id)) {
+      toast.error("Esse usuário já está confirmado nesta pelada");
+      return;
+    }
+
+    if (bannedUserIds.has(profile.user_id)) {
+      toast.error("Esse usuário está banido e não pode ser adicionado");
+      return;
+    }
+
+    setAddingSystemMemberUserId(profile.user_id);
+
+    const { error } = await supabase.from("pelada_members").upsert(
+      {
+        pelada_id: pelada.id,
+        user_id: profile.user_id,
+        member_name: profile.display_name,
+        member_avatar_url: profile.avatar_url,
+        is_goalkeeper: false,
+        admin_selected: true,
+      },
+      { onConflict: "pelada_id,user_id" }
+    );
+
+    setAddingSystemMemberUserId(null);
+
+    if (error) {
+      toast.error("Não foi possível adicionar o membro na pelada");
+      return;
+    }
+
+    toast.success("Membro adicionado na pelada");
+    setSystemMemberSearch("");
+    setSystemMemberResults([]);
     fetchAll();
   };
 
@@ -1599,6 +1684,47 @@ const AdminPelada = () => {
 
         {activeMenu === "membros" && (
         <>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-3 font-display text-lg text-foreground">ADICIONAR MEMBRO DO SISTEMA</h2>
+          <p className="mb-3 text-xs text-muted-foreground">Busque por nome e adicione o usuário diretamente nesta pelada.</p>
+
+          <div className="space-y-3">
+            <Input
+              placeholder="Digite pelo menos 2 letras do nome"
+              value={systemMemberSearch}
+              onChange={(e) => setSystemMemberSearch(e.target.value)}
+            />
+
+            {systemMemberSearch.trim().length < 2 ? (
+              <p className="text-xs text-muted-foreground">Digite pelo menos 2 caracteres para buscar.</p>
+            ) : isSearchingSystemMembers ? (
+              <p className="text-xs text-muted-foreground">Buscando membros do sistema...</p>
+            ) : systemMemberResults.length === 0 ? (
+              <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">Nenhum usuário encontrado para adicionar</p>
+            ) : (
+              <div className="space-y-2">
+                {systemMemberResults.map((profile) => {
+                  const isBanned = bannedUserIds.has(profile.user_id);
+                  const isAdding = addingSystemMemberUserId === profile.user_id;
+
+                  return (
+                    <div key={profile.user_id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/40 p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{profile.display_name}</p>
+                        <p className="truncate text-xs text-muted-foreground">ID: {profile.user_id}</p>
+                      </div>
+
+                      <Button size="sm" onClick={() => addSystemMemberToPelada(profile)} disabled={isBanned || isAdding}>
+                        {isBanned ? "Banido" : isAdding ? "Adicionando..." : "Adicionar"}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-3 font-display text-lg text-foreground">SOLICITAÇÕES PENDENTES</h2>
           <p className="mb-3 text-xs text-muted-foreground">Aprovações e recusas de entrada na pelada.</p>
