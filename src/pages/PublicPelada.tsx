@@ -430,7 +430,13 @@ const PublicPelada = () => {
     });
 
     if (error) {
-      toast.error("Não foi possível adicionar convidado");
+      console.error("Erro adicionando convidado:", error);
+
+      if (error.code === "42501" || /row-level security|permission denied/i.test(error.message)) {
+        toast.error("Sem permissão para adicionar convidado nesta pelada");
+      } else {
+        toast.error(`Não foi possível adicionar convidado: ${error.message}`);
+      }
       return;
     }
 
