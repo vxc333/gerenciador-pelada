@@ -538,7 +538,7 @@ const PublicPelada = () => {
   };
 
   const handleMoveEntry = async (entry: PeladaListEntry, toWaiting: boolean) => {
-    if (!canManagePelada) {
+    if (!canManagePelada || !pelada) {
       toast.error("Você não tem permissão para mover participantes");
       return;
     }
@@ -547,7 +547,13 @@ const PublicPelada = () => {
     setMovingEntryId(entryId);
 
     if (entry.kind === "member") {
-      const { error } = await supabase.from("pelada_members").update({ is_waiting: toWaiting }).eq("id", entry.member.id);
+      const { data, error } = await supabase
+        .from("pelada_members")
+        .update({ is_waiting: toWaiting })
+        .eq("id", entry.member.id)
+        .eq("pelada_id", pelada.id)
+        .select("id, is_waiting")
+        .maybeSingle();
 
       setMovingEntryId(null);
 
@@ -556,17 +562,45 @@ const PublicPelada = () => {
         return;
       }
 
+      if (!data) {
+        toast.error("Movimentação não aplicada. Verifique suas permissões de admin nesta pelada.");
+        return;
+      }
+
+      if (data.is_waiting !== toWaiting) {
+        toast.error("Não foi possível persistir a movimentação do membro");
+        fetchAll();
+        return;
+      }
+
       toast.success(toWaiting ? "Membro movido para a lista de espera" : "Membro movido para a lista principal");
       fetchAll();
       return;
     }
 
-    const { error } = await supabase.from("pelada_member_guests").update({ is_waiting: toWaiting }).eq("id", entry.guest.id);
+    const { data, error } = await supabase
+      .from("pelada_member_guests")
+      .update({ is_waiting: toWaiting })
+      .eq("id", entry.guest.id)
+      .eq("pelada_id", pelada.id)
+      .select("id, is_waiting")
+      .maybeSingle();
 
     setMovingEntryId(null);
 
     if (error) {
       toast.error("Não foi possível mover o convidado");
+      return;
+    }
+
+    if (!data) {
+      toast.error("Movimentação não aplicada. Verifique suas permissões de admin nesta pelada.");
+      return;
+    }
+
+    if (data.is_waiting !== toWaiting) {
+      toast.error("Não foi possível persistir a movimentação do convidado");
+      fetchAll();
       return;
     }
 
