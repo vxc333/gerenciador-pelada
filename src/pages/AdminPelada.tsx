@@ -1599,6 +1599,17 @@ const AdminPelada = () => {
             Confirmados no total: <span className="font-semibold text-foreground">{totalCurrentConfirmed}</span> | Elegíveis para sorteio: <span className="font-semibold text-foreground">{eligibleEntries.length}</span>
           </div>
 
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Button onClick={handleDraw} className="gap-2" disabled={!!pelada.draw_done_at || eligibleEntries.length === 0}>
+              <Shuffle className="h-4 w-4" /> {pelada.draw_done_at ? "Sorteio já realizado" : "Fazer sorteio oficial"}
+            </Button>
+            {pelada.draw_done_at ? (
+              <p className="text-xs text-muted-foreground">Esse sorteio é único e já foi concluído.</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">O sorteio considera a última pelada para evitar repetir parcerias.</p>
+            )}
+          </div>
+
           <div className="space-y-2">
             {orderedListEntries.map((entry) => {
               if (entry.kind === "member") {
