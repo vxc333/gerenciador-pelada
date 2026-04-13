@@ -1284,15 +1284,15 @@ const AdminPelada = () => {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">ACOES RAPIDAS</h2>
+          <h2 className="mb-2 font-display text-lg text-foreground">AÇÕES RÁPIDAS</h2>
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={handleDraw} className="gap-2" disabled={!!pelada.draw_done_at || eligibleEntries.length === 0}>
-              <Shuffle className="h-4 w-4" /> {pelada.draw_done_at ? "Sorteio ja realizado" : "Fazer sorteio oficial"}
+              <Shuffle className="h-4 w-4" /> {pelada.draw_done_at ? "Sorteio já realizado" : "Fazer sorteio oficial"}
             </Button>
             <p className="text-xs text-muted-foreground">
               {pelada.draw_done_at
-                ? "Esse sorteio e unico e nao pode ser refeito."
-                : "Disponivel para admin e admin supremo; evita repetir parcerias da ultima pelada quando possivel."}
+                ? "Esse sorteio é único e não pode ser refeito."
+                : "Disponível para admin e admin supremo; evita repetir parcerias da última pelada quando possível."}
             </p>
           </div>
         </div>
