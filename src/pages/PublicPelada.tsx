@@ -74,6 +74,7 @@ const PublicPelada = () => {
   const [systemMemberResults, setSystemMemberResults] = useState<UserProfileRow[]>([]);
   const [isSearchingSystemMembers, setIsSearchingSystemMembers] = useState(false);
   const [addingSystemMemberUserId, setAddingSystemMemberUserId] = useState<string | null>(null);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
@@ -502,6 +503,36 @@ const PublicPelada = () => {
     }
 
     toast.success("Convidado removido");
+    fetchAll();
+  };
+
+  const handleAdminRemoveMember = async (member: MemberRow) => {
+    if (!pelada || !canManagePelada || !user) {
+      toast.error("Você não tem permissão para remover membros");
+      return;
+    }
+
+    if (member.user_id === user.id) {
+      toast.error("Use o botão de remover minha confirmação para sair da lista");
+      return;
+    }
+
+    setRemovingMemberId(member.id);
+
+    const { error } = await supabase
+      .from("pelada_members")
+      .delete()
+      .eq("pelada_id", pelada.id)
+      .eq("user_id", member.user_id);
+
+    setRemovingMemberId(null);
+
+    if (error) {
+      toast.error("Não foi possível remover o membro");
+      return;
+    }
+
+    toast.success("Membro removido da lista");
     fetchAll();
   };
 
@@ -1104,6 +1135,7 @@ const PublicPelada = () => {
               {orderedListEntries.map((entry) => {
                 if (entry.kind === "member") {
                   const member = entry.member;
+                  const canRemoveMember = canManagePelada && member.user_id !== user?.id;
 
                   return (
                     <div key={member.id} className="rounded-md border border-border bg-secondary/50 p-2">
@@ -1120,7 +1152,20 @@ const PublicPelada = () => {
                             {pelada.list_priority_mode === "member_priority" ? ` (prio ${member.priority_score})` : ""}
                           </span>
                         </div>
-                        {entry.isWaiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
+                        <div className="flex items-center gap-2">
+                          {entry.isWaiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
+                          {canRemoveMember && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-destructive hover:text-destructive"
+                              onClick={() => handleAdminRemoveMember(member)}
+                              disabled={removingMemberId === member.id}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
