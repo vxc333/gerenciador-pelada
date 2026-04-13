@@ -546,10 +546,42 @@ const PublicPelada = () => {
     const entryId = `${entry.kind}-${entry.id}`;
     setMovingEntryId(entryId);
 
+    const buildMemberMovePatch = (isGoalkeeperRole: boolean) => {
+      const patch: { is_waiting: boolean; priority_score?: number; created_at?: string } = { is_waiting: toWaiting };
+
+      if (pelada.list_priority_mode === "member_priority") {
+        const roleScores = members
+          .filter((m) => m.is_goalkeeper === isGoalkeeperRole)
+          .map((m) => m.priority_score);
+        const minScore = roleScores.length > 0 ? Math.min(...roleScores) : 0;
+        const maxScore = roleScores.length > 0 ? Math.max(...roleScores) : 0;
+        patch.priority_score = toWaiting ? minScore - 1 : maxScore + 1;
+        return patch;
+      }
+
+      const approvedGuestsNow = guests.filter((g) => g.approval_status === "approved");
+      const isGuestGoalkeeper = (name: string) => /\(goleiro\)\s*$/i.test(name);
+
+      const roleTimestamps = [
+        ...members.filter((m) => m.is_goalkeeper === isGoalkeeperRole).map((m) => new Date(m.created_at).getTime()),
+        ...approvedGuestsNow
+          .filter((g) => isGuestGoalkeeper(g.guest_name) === isGoalkeeperRole)
+          .map((g) => new Date(g.created_at).getTime()),
+      ].filter((value) => Number.isFinite(value));
+
+      const nowMs = Date.now();
+      const earliestMs = roleTimestamps.length > 0 ? Math.min(...roleTimestamps) : nowMs;
+      const latestMs = roleTimestamps.length > 0 ? Math.max(...roleTimestamps) : nowMs;
+      const shiftedMs = toWaiting ? latestMs + 1000 : earliestMs - 1000;
+
+      patch.created_at = new Date(shiftedMs).toISOString();
+      return patch;
+    };
+
     if (entry.kind === "member") {
       const { data, error } = await supabase
         .from("pelada_members")
-        .update({ is_waiting: toWaiting })
+        .update(buildMemberMovePatch(entry.isGoalkeeper))
         .eq("id", entry.member.id)
         .eq("pelada_id", pelada.id)
         .select("id, is_waiting")
@@ -578,9 +610,18 @@ const PublicPelada = () => {
       return;
     }
 
+    if (pelada.guest_priority_mode === "grouped_with_member") {
+      setMovingEntryId(null);
+      toast.error("Convidado segue a ordem do responsável. Mova o responsável para alterar a posição deste convidado.");
+      return;
+    }
+
     const { data, error } = await supabase
       .from("pelada_member_guests")
-      .update({ is_waiting: toWaiting })
+      .update({
+        is_waiting: toWaiting,
+        created_at: new Date(Date.now() + (toWaiting ? 1000 : -1000)).toISOString(),
+      })
       .eq("id", entry.guest.id)
       .eq("pelada_id", pelada.id)
       .select("id, is_waiting")
