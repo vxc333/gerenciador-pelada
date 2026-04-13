@@ -1061,7 +1061,7 @@ const AdminPelada = () => {
       return;
     }
 
-    // Busca o sorteio mais recente (qualquer admin) para evitar repetir times
+    // Busca o sorteio mais recente para evitar repetir companheiros de time.
     const { data: prevDrawData } = await supabase
       .from("peladas")
       .select("draw_result")
@@ -1076,66 +1076,105 @@ const AdminPelada = () => {
       : null;
 
     const normName = (n: string) => n.trim().toLowerCase();
-    const prevTeamByName = new Map<string, number>();
+
+    const previousTeammatePairs = new Set<string>();
+
+    const pairKey = (a: string, b: string) => {
+      const na = normName(a);
+      const nb = normName(b);
+      return na < nb ? `${na}::${nb}` : `${nb}::${na}`;
+    };
+
     if (prevDraw) {
-      for (const t of prevDraw) {
-        for (const pName of t.players) {
-          prevTeamByName.set(normName(pName), t.team);
+      for (const team of prevDraw) {
+        for (let i = 0; i < team.players.length; i += 1) {
+          for (let j = i + 1; j < team.players.length; j += 1) {
+            previousTeammatePairs.add(pairKey(team.players[i], team.players[j]));
+          }
         }
       }
     }
 
-    const shuffled = shuffle(eligibleEntries);
     const numTeams = pelada.num_teams;
-    const maxSize = Math.ceil(shuffled.length / numTeams);
+    const baseSize = Math.floor(eligibleEntries.length / numTeams);
+    const extraTeams = eligibleEntries.length % numTeams;
+    const capacities = Array.from({ length: numTeams }, (_, idx) => (idx < extraTeams ? baseSize + 1 : baseSize));
 
-    const teams = Array.from({ length: numTeams }, (_, idx) => ({
-      team: idx + 1,
-      players: [] as string[],
-    }));
+    const createEmptyTeams = () =>
+      Array.from({ length: numTeams }, (_, idx) => ({
+        team: idx + 1,
+        players: [] as string[],
+      }));
 
-    for (const playerName of shuffled) {
-      const prevTeam = prevTeamByName.get(normName(playerName));
-
-      let bestIdx = -1;
-      let bestScore = Infinity;
-
-      // Primeira passagem: respeita maxSize
-      for (let t = 0; t < numTeams; t++) {
-        if (teams[t].players.length >= maxSize) continue;
-        let conflicts = 0;
-        if (prevTeam !== undefined) {
-          for (const existing of teams[t].players) {
-            if (prevTeamByName.get(normName(existing)) === prevTeam) conflicts++;
-          }
-        }
-        const score = conflicts * (shuffled.length + 1) + teams[t].players.length;
-        if (score < bestScore) {
-          bestScore = score;
-          bestIdx = t;
-        }
+    const countConflictsInTeam = (teamPlayers: string[], player: string) => {
+      let conflicts = 0;
+      for (const teammate of teamPlayers) {
+        if (previousTeammatePairs.has(pairKey(teammate, player))) conflicts += 1;
       }
+      return conflicts;
+    };
 
-      // Fallback para quando todos os times já estão no limite
-      if (bestIdx === -1) {
-        bestScore = Infinity;
-        for (let t = 0; t < numTeams; t++) {
-          let conflicts = 0;
-          if (prevTeam !== undefined) {
-            for (const existing of teams[t].players) {
-              if (prevTeamByName.get(normName(existing)) === prevTeam) conflicts++;
+    const countTotalConflicts = (candidateTeams: DrawTeam[]) => {
+      let total = 0;
+      for (const team of candidateTeams) {
+        for (let i = 0; i < team.players.length; i += 1) {
+          for (let j = i + 1; j < team.players.length; j += 1) {
+            if (previousTeammatePairs.has(pairKey(team.players[i], team.players[j]))) {
+              total += 1;
             }
           }
-          const score = conflicts * (shuffled.length + 1) + teams[t].players.length;
-          if (score < bestScore) {
-            bestScore = score;
-            bestIdx = t;
-          }
         }
       }
+      return total;
+    };
 
-      teams[bestIdx].players.push(playerName);
+    const maxAttempts = 300;
+    let bestTeams: DrawTeam[] | null = null;
+    let bestConflicts = Number.POSITIVE_INFINITY;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const players = shuffle(eligibleEntries);
+      const teams = createEmptyTeams();
+
+      for (const playerName of players) {
+        let bestScore = Number.POSITIVE_INFINITY;
+        const bestCandidates: number[] = [];
+
+        for (let teamIndex = 0; teamIndex < numTeams; teamIndex += 1) {
+          if (teams[teamIndex].players.length >= capacities[teamIndex]) continue;
+
+          const conflicts = countConflictsInTeam(teams[teamIndex].players, playerName);
+          const load = teams[teamIndex].players.length;
+          const score = conflicts * (eligibleEntries.length + 1) + load;
+
+          if (score < bestScore) {
+            bestScore = score;
+            bestCandidates.length = 0;
+            bestCandidates.push(teamIndex);
+          } else if (score === bestScore) {
+            bestCandidates.push(teamIndex);
+          }
+        }
+
+        if (bestCandidates.length === 0) {
+          continue;
+        }
+
+        const randomCandidate = bestCandidates[Math.floor(Math.random() * bestCandidates.length)];
+        teams[randomCandidate].players.push(playerName);
+      }
+
+      const totalConflicts = countTotalConflicts(teams);
+
+      if (totalConflicts < bestConflicts) {
+        bestConflicts = totalConflicts;
+        bestTeams = teams;
+      }
+
+      if (bestConflicts === 0) break;
     }
+
+    const teams = bestTeams || createEmptyTeams();
 
     const { error } = await supabase
       .from("peladas")
@@ -1152,7 +1191,11 @@ const AdminPelada = () => {
       return;
     }
 
-    toast.success("Sorteio realizado com sucesso!");
+    if (bestConflicts > 0) {
+      toast.success(`Sorteio realizado com ${bestConflicts} repetição(ões) inevitável(is) de parceria.`);
+    } else {
+      toast.success("Sorteio realizado com sucesso sem repetir parcerias da última pelada!");
+    }
     fetchAll();
   };
 
