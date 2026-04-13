@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { Shield, Trash2, ArrowLeft, Download, Link as LinkIcon, Check, X } from "lucide-react";
+import { Shield, Trash2, ArrowLeft, Download, Link as LinkIcon, Check, X, ArrowUp, ArrowDown } from "lucide-react";
 import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia, formatDateTimeBrasiliaWithSeconds } from "@/lib/datetime-br";
 import { buildOrderedPeladaEntries, sortPeladaMembers, type PeladaListEntry } from "@/lib/pelada-participants";
 import { getPeladaRules } from "@/lib/pelada-rules";
@@ -75,6 +75,7 @@ const PublicPelada = () => {
   const [isSearchingSystemMembers, setIsSearchingSystemMembers] = useState(false);
   const [addingSystemMemberUserId, setAddingSystemMemberUserId] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [movingEntryId, setMovingEntryId] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
@@ -533,6 +534,43 @@ const PublicPelada = () => {
     }
 
     toast.success("Membro removido da lista");
+    fetchAll();
+  };
+
+  const handleMoveEntry = async (entry: PeladaListEntry, toWaiting: boolean) => {
+    if (!canManagePelada) {
+      toast.error("Você não tem permissão para mover participantes");
+      return;
+    }
+
+    const entryId = `${entry.kind}-${entry.id}`;
+    setMovingEntryId(entryId);
+
+    if (entry.kind === "member") {
+      const { error } = await supabase.from("pelada_members").update({ is_waiting: toWaiting }).eq("id", entry.member.id);
+
+      setMovingEntryId(null);
+
+      if (error) {
+        toast.error("Não foi possível mover o membro");
+        return;
+      }
+
+      toast.success(toWaiting ? "Membro movido para a lista de espera" : "Membro movido para a lista principal");
+      fetchAll();
+      return;
+    }
+
+    const { error } = await supabase.from("pelada_member_guests").update({ is_waiting: toWaiting }).eq("id", entry.guest.id);
+
+    setMovingEntryId(null);
+
+    if (error) {
+      toast.error("Não foi possível mover o convidado");
+      return;
+    }
+
+    toast.success(toWaiting ? "Convidado movido para a lista de espera" : "Convidado movido para a lista principal");
     fetchAll();
   };
 
@@ -1136,6 +1174,8 @@ const PublicPelada = () => {
                 if (entry.kind === "member") {
                   const member = entry.member;
                   const canRemoveMember = canManagePelada && member.user_id !== user?.id;
+                  const moveEntryId = `${entry.kind}-${entry.id}`;
+                  const isMovingThisEntry = movingEntryId === moveEntryId;
 
                   return (
                     <div key={member.id} className="rounded-md border border-border bg-secondary/50 p-2">
@@ -1154,6 +1194,18 @@ const PublicPelada = () => {
                         </div>
                         <div className="flex items-center gap-2">
                           {entry.isWaiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
+                          {canManagePelada && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => handleMoveEntry(entry, !entry.isWaiting)}
+                              disabled={isMovingThisEntry}
+                              title={entry.isWaiting ? "Subir para lista principal" : "Mover para lista de espera"}
+                            >
+                              {entry.isWaiting ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                            </Button>
+                          )}
                           {canRemoveMember && (
                             <Button
                               variant="ghost"
@@ -1173,6 +1225,8 @@ const PublicPelada = () => {
 
                 const guest = entry.guest;
                 const canDelete = !!myMember && guest.pelada_member_id === myMember.id;
+                const moveEntryId = `${entry.kind}-${entry.id}`;
+                const isMovingThisEntry = movingEntryId === moveEntryId;
 
                 return (
                   <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-xs">
@@ -1188,6 +1242,18 @@ const PublicPelada = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         {entry.isWaiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
+                        {canManagePelada && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => handleMoveEntry(entry, !entry.isWaiting)}
+                            disabled={isMovingThisEntry}
+                            title={entry.isWaiting ? "Subir para lista principal" : "Mover para lista de espera"}
+                          >
+                            {entry.isWaiting ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+                          </Button>
+                        )}
                         {canDelete && (
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveGuest(guest.id)}>
                             <Trash2 className="h-3.5 w-3.5" />
