@@ -1273,6 +1273,30 @@ const AdminPelada = () => {
       </header>
 
       <main className="container mx-auto space-y-4 px-4 py-6">
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex flex-wrap gap-2">
+            <Button variant={activeMenu === "config" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("config")}>Config</Button>
+            <Button variant={activeMenu === "lista" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("lista")}>Lista</Button>
+            <Button variant={activeMenu === "historico" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("historico")}>Historico</Button>
+            <Button variant={activeMenu === "membros" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("membros")}>Membros</Button>
+            <Button variant={activeMenu === "queridometro" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("queridometro")}>Queridometro</Button>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-2 font-display text-lg text-foreground">ACOES RAPIDAS</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={handleDraw} className="gap-2" disabled={!!pelada.draw_done_at || eligibleEntries.length === 0}>
+              <Shuffle className="h-4 w-4" /> {pelada.draw_done_at ? "Sorteio ja realizado" : "Fazer sorteio oficial"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {pelada.draw_done_at
+                ? "Esse sorteio e unico e nao pode ser refeito."
+                : "Disponivel para admin e admin supremo; evita repetir parcerias da ultima pelada quando possivel."}
+            </p>
+          </div>
+        </div>
+
         {activeMenu === "config" && (
         <>
         <div className="rounded-lg border border-border bg-card p-4">
