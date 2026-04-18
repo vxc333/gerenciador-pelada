@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Check, Download, Link as LinkIcon, Shield, Shuffle, Trash2, X } from "lucide-react";
+import { Check, Download, Link as LinkIcon, Shuffle, Trash2, X } from "lucide-react";
+import { AppHeader } from "@/components/layout/AppHeader";
+import { AdminTabs } from "@/components/admin/AdminTabs";
 import { toast } from "sonner";
 import {
   formatDateBrasiliaLong,
@@ -1258,34 +1260,22 @@ const AdminPelada = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="container mx-auto flex items-center gap-3 px-4 py-3">
-          <Link to="/">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="font-display text-xl text-foreground">{pelada.title}</h1>
-            <p className="text-xs text-muted-foreground">Painel administrativo</p>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        title={pelada.title}
+        subtitle="Painel administrativo"
+        backTo="/"
+      />
 
       <main className="container mx-auto space-y-4 px-4 py-6">
-        <div className="rounded-lg border border-border bg-card p-3">
-          <div className="flex flex-wrap gap-2">
-            <Button variant={activeMenu === "config" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("config")}>Config</Button>
-            <Button variant={activeMenu === "lista" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("lista")}>Lista</Button>
-            <Button variant={activeMenu === "historico" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("historico")}>Historico</Button>
-            <Button variant={activeMenu === "membros" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("membros")}>Membros</Button>
-            <Button variant={activeMenu === "queridometro" ? "default" : "outline"} size="sm" onClick={() => setActiveMenu("queridometro")}>Queridometro</Button>
-          </div>
-        </div>
+        <AdminTabs
+          active={activeMenu}
+          onChange={setActiveMenu}
+          pendingCount={pendingRequests.length + pendingGuestRequests.length}
+        />
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">AÇÕES RÁPIDAS</h2>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="rounded-xl border border-border/60 bg-gradient-to-r from-primary/5 to-card p-4">
+          <h2 className="mb-2 font-display text-lg text-primary">AÇÕES RÁPIDAS</h2>
+          <div className="flex flex-wrap items-center gap-3">
             <Button onClick={handleDraw} className="gap-2" disabled={!!pelada.draw_done_at || eligibleEntries.length === 0}>
               <Shuffle className="h-4 w-4" /> {pelada.draw_done_at ? "Sorteio já realizado" : "Fazer sorteio oficial"}
             </Button>
@@ -1299,7 +1289,7 @@ const AdminPelada = () => {
 
         {activeMenu === "config" && (
         <>
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
@@ -1341,8 +1331,8 @@ const AdminPelada = () => {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">ABERTURA DAS CONFIRMAÇÕES</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-2 font-display text-lg text-primary">ABERTURA DAS CONFIRMAÇÕES</h2>
           <p className="mb-2 text-xs text-muted-foreground">Atual: {formatOpenAt()}</p>
           <div className="flex gap-2">
             <Input
@@ -1355,8 +1345,8 @@ const AdminPelada = () => {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">PRIORIDADE DA LISTA</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-2 font-display text-lg text-primary">PRIORIDADE DA LISTA</h2>
           <p className="mb-3 text-xs text-muted-foreground">
             Defina se a ordem segue confirmação ou prioridade manual e como os convidados entram na fila.
           </p>
@@ -1392,8 +1382,8 @@ const AdminPelada = () => {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">REGRAS CONFIGURÁVEIS</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-2 font-display text-lg text-primary">REGRAS CONFIGURÁVEIS</h2>
           <p className="mb-3 text-xs text-muted-foreground">Defina comportamento automático para admins, convidados e avisos de confirmação.</p>
 
           <div className="space-y-3">
@@ -1437,9 +1427,9 @@ const AdminPelada = () => {
         )}
 
         {activeMenu === "historico" && (
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-display text-lg text-foreground">HISTÓRICO DE PARTICIPAÇÃO</h2>
+            <h2 className="font-display text-lg text-primary">HISTÓRICO DE PARTICIPAÇÃO</h2>
             <Button variant="outline" size="sm" className="gap-2" onClick={exportTimelineCsv}>
               <Download className="h-4 w-4" /> Exportar CSV
             </Button>
@@ -1451,7 +1441,7 @@ const AdminPelada = () => {
             )}
 
             {timelineEvents.map((event) => (
-              <div key={event.id} className="rounded-md border border-border bg-secondary/30 p-2">
+              <div key={event.id} className="rounded-lg border border-border/60 bg-secondary/15 p-2">
                 <p className="text-sm text-foreground">{event.message}</p>
                 <p className="text-xs text-muted-foreground">{formatDateTimeBrasilia(event.at)} (Brasília)</p>
               </div>
@@ -1462,13 +1452,13 @@ const AdminPelada = () => {
 
         {activeMenu === "lista" && (
         <>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">SOLICITAÇÕES DE ENTRADA</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-3 font-display text-lg text-primary">SOLICITAÇÕES DE ENTRADA</h2>
           <p className="mb-3 text-xs text-muted-foreground">Admins da pelada aprovam ou recusam. Banidos não podem ser aprovados.</p>
 
           <div className="space-y-2">
             {pendingRequests.map((request) => (
-              <div key={request.id} className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-2">
+              <div key={request.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-secondary/20 p-2 transition-colors hover:bg-secondary/40">
                 <div>
                   <p className="text-sm text-foreground">{profilesByUserId[request.user_id]?.display_name || request.display_name}</p>
                   <p className="text-xs text-muted-foreground">{request.user_id}</p>
@@ -1501,8 +1491,8 @@ const AdminPelada = () => {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">ADICIONAR PESSOA EXTERNA (APENAS ADMIN)</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-2 font-display text-lg text-primary">ADICIONAR PESSOA EXTERNA (APENAS ADMIN)</h2>
           <p className="mb-3 text-xs text-muted-foreground">Use para confirmações feitas por fora (ex.: WhatsApp). A pessoa entra na lista normalmente.</p>
           <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
             <div>
@@ -1526,8 +1516,8 @@ const AdminPelada = () => {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">SOLICITAÇÕES DE CONVIDADOS</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-3 font-display text-lg text-primary">SOLICITAÇÕES DE CONVIDADOS</h2>
           <p className="mb-3 text-xs text-muted-foreground">Convidados adicionados por membros entram na lista apenas após aprovação de admin.</p>
 
           <div className="space-y-2">
@@ -1536,7 +1526,7 @@ const AdminPelada = () => {
               const hostName = hostMember ? getMemberDisplayName(hostMember) : "responsável removido";
 
               return (
-                <div key={guest.id} className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-2">
+                <div key={guest.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-secondary/20 p-2 transition-colors hover:bg-secondary/40">
                   <div>
                     <p className="text-sm text-foreground">{guest.guest_name}</p>
                     <p className="text-xs text-muted-foreground">Responsável: {hostName}</p>
@@ -1559,8 +1549,8 @@ const AdminPelada = () => {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">ADMINS DELEGADOS</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-3 font-display text-lg text-primary">ADMINS DELEGADOS</h2>
 
           <div className="space-y-2">
             {adminCandidates.map((candidate) => {
@@ -1568,7 +1558,7 @@ const AdminPelada = () => {
               const memberIsAdmin = adminUserIds.has(candidate.userId);
 
               return (
-                <div key={`admin-${candidate.userId}`} className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-2">
+                <div key={`admin-${candidate.userId}`} className="flex items-center justify-between rounded-lg border border-border/60 bg-secondary/20 p-2 transition-colors hover:bg-secondary/40">
                   <div>
                     <p className="text-sm text-foreground">{candidate.displayName}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1615,8 +1605,8 @@ const AdminPelada = () => {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">SELEÇÃO PARA O JOGO</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-3 font-display text-lg text-primary">SELEÇÃO PARA O JOGO</h2>
           <p className="mb-3 text-xs text-muted-foreground">Participantes e convidados aprovados aparecem na lista. Goleiros não entram no sorteio.</p>
 
           <div className="mb-3 rounded-md border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
@@ -1640,7 +1630,7 @@ const AdminPelada = () => {
                 const member = entry.member;
 
                 return (
-                  <div key={member.id} className="rounded-md border border-border bg-secondary/40 p-2">
+                  <div key={member.id} className="rounded-lg border border-border/60 bg-secondary/20 p-2 transition-colors hover:bg-secondary/40">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm text-foreground">
                         {getMemberDisplayName(member)}
@@ -1762,8 +1752,8 @@ const AdminPelada = () => {
 
         {activeMenu === "membros" && (
         <>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">ADICIONAR MEMBRO DO SISTEMA</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-3 font-display text-lg text-primary">ADICIONAR MEMBRO DO SISTEMA</h2>
           <p className="mb-3 text-xs text-muted-foreground">Busque por nome e adicione o usuário diretamente nesta pelada.</p>
 
           <div className="space-y-3">
@@ -1786,7 +1776,7 @@ const AdminPelada = () => {
                   const isAdding = addingSystemMemberUserId === profile.user_id;
 
                   return (
-                    <div key={profile.user_id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/40 p-3">
+                    <div key={profile.user_id} className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-secondary/20 p-3 transition-colors hover:bg-secondary/40">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">{profile.display_name}</p>
                         <p className="truncate text-xs text-muted-foreground">ID: {profile.user_id}</p>
@@ -1803,8 +1793,8 @@ const AdminPelada = () => {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">SOLICITAÇÕES PENDENTES</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-3 font-display text-lg text-primary">SOLICITAÇÕES PENDENTES</h2>
           <p className="mb-3 text-xs text-muted-foreground">Aprovações e recusas de entrada na pelada.</p>
 
           {pendingRequests.length === 0 ? (
@@ -1812,7 +1802,7 @@ const AdminPelada = () => {
           ) : (
             <div className="space-y-2">
               {pendingRequests.map((request) => (
-                <div key={request.id} className="rounded-md border border-border bg-secondary/40 p-3">
+                <div key={request.id} className="rounded-lg border border-border/60 bg-secondary/20 p-3 transition-colors hover:bg-secondary/40">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
                       <p className="font-medium text-foreground">{profilesByUserId[request.user_id]?.display_name || request.display_name}</p>
@@ -1844,8 +1834,8 @@ const AdminPelada = () => {
           )}
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">MEMBROS CONFIRMADOS</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-3 font-display text-lg text-primary">MEMBROS CONFIRMADOS</h2>
           <p className="mb-3 text-xs text-muted-foreground">Lista de jogadores confirmados com estatísticas de participação.</p>
 
           {Object.keys(memberStats).length === 0 ? (
@@ -1862,7 +1852,7 @@ const AdminPelada = () => {
                 if (!member.is_goalkeeper && !member.is_waiting) statusLabels.push("Linha");
 
                 return (
-                  <div key={member.id} className="rounded-md border border-border bg-secondary/40 p-3">
+                  <div key={member.id} className="rounded-lg border border-border/60 bg-secondary/20 p-3 transition-colors hover:bg-secondary/40">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
@@ -1908,8 +1898,8 @@ const AdminPelada = () => {
         )}
 
         {activeMenu === "queridometro" && (
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">QUERIDÔMETRO (EM CONSTRUÇÃO)</h2>
+        <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
+          <h2 className="mb-2 font-display text-lg text-primary">QUERIDÔMETRO (EM CONSTRUÇÃO)</h2>
           <p className="mb-3 text-sm text-muted-foreground">Módulo reservado para implementação futura.</p>
           <div className="space-y-2 rounded-md bg-secondary/30 p-3 text-sm text-muted-foreground">
             <p>- Registro de gols, assistências e defesas por jogador.</p>
