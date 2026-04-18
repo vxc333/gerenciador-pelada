@@ -5,27 +5,20 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
-    Calendar,
     Camera,
     Plus,
-    Trash2,
-    Link as LinkIcon,
     Settings as SettingsIcon,
-    LogOut,
-    Bell,
-    UserPlus,
-    Shield,
-    Trophy,
     LayoutDashboard,
     History,
     FolderKanban,
     Users,
     CheckCircle2,
 } from "lucide-react";
+import { AppHeader } from "@/components/layout/AppHeader";
+import { NotificationsSheet } from "@/components/pelada/NotificationsSheet";
+import { PeladaCardComponent } from "@/components/pelada/PeladaCard";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { formatDateBrasiliaLong, formatDateTimeBrasilia, fromBrasiliaDateTimeLocalInput } from "@/lib/datetime-br";
@@ -201,23 +194,29 @@ const Index = () => {
     }, [user]);
 
     const enrichWithCounts = useCallback(async (items: PeladaRow[]) => {
-        const withCounts = await Promise.all(
-            items.map(async (pelada) => {
-                const { count: memberCount } = await supabase
-                    .from("pelada_members")
-                    .select("*", { count: "exact", head: true })
-                    .eq("pelada_id", pelada.id);
+        if (items.length === 0) return [];
 
-                const { count: guestCount } = await supabase
-                    .from("pelada_member_guests")
-                    .select("*", { count: "exact", head: true })
-                    .eq("pelada_id", pelada.id);
+        const ids = items.map((p) => p.id);
 
-                return { ...pelada, confirmed_count: (memberCount || 0) + (guestCount || 0) };
-            }),
-        );
+        const [{ data: memberRows }, { data: guestRows }] = await Promise.all([
+            supabase.from("pelada_members").select("pelada_id").in("pelada_id", ids),
+            supabase.from("pelada_member_guests").select("pelada_id").in("pelada_id", ids),
+        ]);
 
-        return withCounts;
+        const memberCountMap = new Map<string, number>();
+        const guestCountMap = new Map<string, number>();
+
+        (memberRows || []).forEach((row) => {
+            memberCountMap.set(row.pelada_id, (memberCountMap.get(row.pelada_id) || 0) + 1);
+        });
+        (guestRows || []).forEach((row) => {
+            guestCountMap.set(row.pelada_id, (guestCountMap.get(row.pelada_id) || 0) + 1);
+        });
+
+        return items.map((pelada) => ({
+            ...pelada,
+            confirmed_count: (memberCountMap.get(pelada.id) || 0) + (guestCountMap.get(pelada.id) || 0),
+        }));
     }, []);
 
     const fetchPeladas = useCallback(async () => {
@@ -1100,246 +1099,92 @@ const Index = () => {
         { key: "disponiveis", label: "Peladas disponíveis", icon: Users, show: true },
     ];
 
-    const renderPeladaCard = (
+    const renderCard = (
         p: PeladaCard,
         options?: { showAdminActions?: boolean; availableCard?: boolean; isNextUpcoming?: boolean },
-    ) => {
-        const showAdminActions = options?.showAdminActions ?? false;
-        const availableCard = options?.availableCard ?? false;
-        const isNextUpcoming = options?.isNextUpcoming ?? false;
-
-        const cardClassName = isNextUpcoming
-            ? "rounded-lg border-2 border-primary bg-card/50 p-4 transition-colors hover:border-primary/80 shadow-lg shadow-primary/20"
-            : "rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40";
-
-        return (
-            <div key={p.id} className={cardClassName}>
-                <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                        <h3 className={`truncate font-display text-lg ${isNextUpcoming ? "text-primary font-bold" : "text-foreground"}`}>
-                            {p.title}
-                        </h3>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                                <Calendar className="h-3.5 w-3.5" />
-                                {formatDate(p.date)}
-                            </span>
-                            <span>{p.location}</span>
-                            <span>Horário: {p.time}</span>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                            <span className="inline-block rounded-full bg-primary/20 px-3 py-0.5 text-xs font-medium text-primary">
-                                {p.confirmed_count || 0} confirmados
-                            </span>
-                            <span className="inline-block rounded-full bg-secondary px-3 py-0.5 text-xs font-medium text-foreground">
-                                linha: {p.max_players} | goleiros: {p.max_goalkeepers}
-                            </span>
-                            <span className="inline-block rounded-full bg-muted px-3 py-0.5 text-xs font-medium text-muted-foreground">
-                                abre {formatOpenAt(p.confirmations_open_at)}
-                            </span>
-                            {p.draw_done_at && (
-                                <span className="inline-block rounded-full bg-accent/20 px-3 py-0.5 text-xs font-medium text-accent">
-                                    sorteio realizado
-                                </span>
-                            )}
-                            {availableCard && p.my_request_status === "pending" && (
-                                <span className="inline-block rounded-full bg-muted px-3 py-0.5 text-xs font-medium text-muted-foreground">
-                                    aguardando aprovação
-                                </span>
-                            )}
-                            {availableCard && p.my_request_status === "rejected" && (
-                                <span className="inline-block rounded-full bg-destructive/20 px-3 py-0.5 text-xs font-medium text-destructive">
-                                    solicitação recusada
-                                </span>
-                            )}
-                            {availableCard && p.is_member && (
-                                <span className="inline-block rounded-full bg-primary/15 px-3 py-0.5 text-xs font-medium text-primary">
-                                    membro aprovado
-                                </span>
-                            )}
-                            {availableCard && p.is_admin && (
-                                <span className="inline-block rounded-full bg-accent/20 px-3 py-0.5 text-xs font-medium text-accent">
-                                    admin delegado
-                                </span>
-                            )}
-                            {(showAdminActions || p.is_admin) && (p.pending_requests_count || 0) > 0 && (
-                                <span className="inline-block rounded-full bg-destructive/20 px-3 py-0.5 text-xs font-medium text-destructive">
-                                    {p.pending_requests_count} solicitação(ões) pendente(s)
-                                </span>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="flex flex-shrink-0 gap-1">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => copyLink(p.id)}
-                            title="Copiar link"
-                            className="h-8 w-8 text-muted-foreground hover:text-primary"
-                        >
-                            <LinkIcon className="h-4 w-4" />
-                        </Button>
-
-                        {showAdminActions && (
-                            <>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleDelete(p.id)}
-                                    title="Excluir"
-                                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            </>
-                        )}
-                    </div>
-                </div>
-
-                {availableCard && (
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                        {p.is_admin ? (
-                            <Link to={`/admin/${p.id}`} className="flex-1">
-                                <Button className="w-full gap-2">
-                                    <Shield className="h-4 w-4" />
-                                    Gerenciar
-                                </Button>
-                            </Link>
-                        ) : p.is_member ? (
-                            <>
-                                <Link to={`/pelada/${p.id}`} className="flex-1">
-                                    <Button className="w-full">Abrir pelada</Button>
-                                </Link>
-                                {p.is_confirmed ? (
-                                    <Button className="w-full sm:w-auto" variant="destructive" onClick={() => handleLeavePelada(p)}>
-                                        Sair da lista
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        className="w-full sm:w-auto"
-                                        variant="default"
-                                        disabled={profileBlocked}
-                                        onClick={() => handleQuickConfirm(p)}
-                                    >
-                                        Confirmar agora
-                                    </Button>
-                                )}
-                            </>
-                        ) : p.my_request_status === "pending" ? (
-                            <Button className="w-full" disabled>
-                                Solicitação enviada
-                            </Button>
-                        ) : p.my_request_status === "rejected" ? (
-                            <Button className="w-full" disabled>
-                                Aguardando novo convite do admin
-                            </Button>
-                        ) : !profileBlocked ? (
-                            <Button className="w-full gap-2" onClick={() => handleRequestJoin(p.id)}>
-                                <UserPlus className="h-4 w-4" />
-                                Solicitar entrada
-                            </Button>
-                        ) : null}
-                    </div>
-                )}
-
-                {showAdminActions && !availableCard && (
-                    <div className="mt-3 flex gap-2">
-                        <Link to={`/admin/${p.id}`} className="flex-1">
-                            <Button className="w-full gap-2">
-                                <SettingsIcon className="h-4 w-4" />
-                                Gerenciar pelada
-                            </Button>
-                        </Link>
-                    </div>
-                )}
-            </div>
-        );
-    };
+    ) => (
+        <PeladaCardComponent
+            key={p.id}
+            pelada={p}
+            showAdminActions={options?.showAdminActions}
+            availableCard={options?.availableCard}
+            isNextUpcoming={options?.isNextUpcoming}
+            profileBlocked={profileBlocked}
+            onCopyLink={copyLink}
+            onDelete={handleDelete}
+            onLeave={handleLeavePelada}
+            onConfirm={handleQuickConfirm}
+            onRequestJoin={handleRequestJoin}
+        />
+    );
 
     return (
         <div className="min-h-screen bg-background">
-            <header className="border-b border-border bg-card">
-                <div className="container mx-auto flex items-center justify-between px-4 py-4">
-                    <h1 className="font-display text-2xl tracking-wider text-primary sm:text-3xl">PELADA DO FURTO</h1>
-                    <div className="flex items-center gap-2">
-                        <Sheet open={notificationsOpen} onOpenChange={setNotificationsOpen}>
-                            <SheetTrigger asChild>
-                                <Button variant="outline" size="icon" className="relative">
-                                    <Bell className="h-4 w-4" />
-                                    {pendingGlobalCount > 0 && (
-                                        <Badge className="absolute -right-2 -top-2 h-5 min-w-5 px-1 text-[10px]">
-                                            {pendingGlobalCount}
-                                        </Badge>
-                                    )}
-                                </Button>
-                            </SheetTrigger>
-                            <SheetContent>
-                                <SheetHeader>
-                                    <SheetTitle>Central de notificações</SheetTitle>
-                                </SheetHeader>
-                                <div className="mt-4 space-y-2">
-                                    {notificationEvents.length === 0 && (
-                                        <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">Sem eventos recentes.</p>
-                                    )}
-                                    {notificationEvents.map((event) => (
-                                        <div key={event.id} className="rounded-md border border-border bg-card p-3">
-                                            <p className="text-sm font-medium text-foreground">{event.peladaTitle}</p>
-                                            <p className="text-sm text-muted-foreground">{event.message}</p>
-                                            <p className="mt-1 text-xs text-muted-foreground">{formatEventTime(event.at)}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </SheetContent>
-                        </Sheet>
-
-                        <Button variant="ghost" onClick={signOut} className="gap-2 text-muted-foreground hover:text-destructive">
-                            <LogOut className="h-4 w-4" />
-                            <span className="hidden sm:inline">Sair</span>
-                        </Button>
-                    </div>
-                </div>
-            </header>
+            <AppHeader
+                title="PELADA DO FURTO"
+                onSignOut={signOut}
+                actions={
+                    <NotificationsSheet
+                        open={notificationsOpen}
+                        onOpenChange={setNotificationsOpen}
+                        events={notificationEvents}
+                        pendingCount={pendingGlobalCount}
+                    />
+                }
+            />
 
             <main className="container mx-auto max-w-6xl px-4 py-6">
-                <div className="mb-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+                {/* Mobile nav */}
+                <div className="mb-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
                     {navItems
                         .filter((item) => item.show)
                         .map((item) => {
                             const Icon = item.icon;
+                            const active = activeSection === item.key;
                             return (
-                                <Button
+                                <button
                                     key={item.key}
-                                    variant={activeSection === item.key ? "default" : "outline"}
-                                    size="sm"
-                                    className="whitespace-nowrap"
+                                    className={[
+                                        "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+                                        active
+                                            ? "bg-primary text-primary-foreground"
+                                            : "border border-border bg-card text-muted-foreground hover:text-foreground",
+                                    ].join(" ")}
                                     onClick={() => setActiveSection(item.key)}
                                 >
-                                    <Icon className="mr-1 h-4 w-4" /> {item.label}
-                                </Button>
+                                    <Icon className="h-3.5 w-3.5" /> {item.label}
+                                </button>
                             );
                         })}
                 </div>
 
-                <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+                <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+                    {/* Desktop sidebar */}
                     <aside className="hidden lg:block">
-                        <div className="sticky top-5 rounded-lg border border-border bg-card p-3">
-                            <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Navegação</p>
-                            <div className="space-y-1">
+                        <div className="sticky top-20 rounded-xl border border-border/60 bg-card/50 p-2 backdrop-blur-sm">
+                            <p className="mb-1 px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                                Menu
+                            </p>
+                            <div className="space-y-0.5">
                                 {navItems
                                     .filter((item) => item.show)
                                     .map((item) => {
                                         const Icon = item.icon;
+                                        const active = activeSection === item.key;
                                         return (
-                                            <Button
+                                            <button
                                                 key={item.key}
-                                                variant={activeSection === item.key ? "secondary" : "ghost"}
-                                                className="w-full justify-start"
+                                                className={[
+                                                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                                                    active
+                                                        ? "bg-primary/15 text-primary"
+                                                        : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                                                ].join(" ")}
                                                 onClick={() => setActiveSection(item.key)}
                                             >
-                                                <Icon className="mr-2 h-4 w-4" />
+                                                <Icon className="h-4 w-4 shrink-0" />
                                                 {item.label}
-                                            </Button>
+                                            </button>
                                         );
                                     })}
                             </div>
@@ -1348,17 +1193,17 @@ const Index = () => {
 
                     <div>
                         {activeSection === "resumo" && (
-                            <div className="mb-6 rounded-lg border border-border bg-card p-4 sm:p-6">
+                            <div className="mb-6 rounded-xl border border-border/60 bg-card p-4 sm:p-6 animate-fade-in">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
-                                        <h2 className="font-display text-xl text-foreground">PAINEL</h2>
-                                        <p className="text-sm text-muted-foreground">Gerencie seu perfil e crie novas peladas por modal.</p>
+                                        <h2 className="font-display text-2xl text-foreground">PAINEL</h2>
+                                        <p className="text-sm text-muted-foreground">Gerencie seu perfil e crie novas peladas.</p>
                                     </div>
 
                                     <div className="flex flex-wrap items-center gap-2">
                                         {isSuperAdmin && (
-                                            <span className="rounded-full bg-accent/20 px-3 py-1 text-xs font-medium text-accent">
-                                                admin supremo
+                                            <span className="rounded-full bg-accent/15 px-3 py-1 text-xs font-semibold text-accent ring-1 ring-accent/30">
+                                                ★ admin supremo
                                             </span>
                                         )}
 
@@ -1592,36 +1437,36 @@ const Index = () => {
                                 <div className="mb-3 mt-8">
                                     <h2 className="font-display text-xl text-foreground">HISTÓRICO DE PARTICIPAÇÃO</h2>
                                 </div>
-                                <div className="mb-6 rounded-lg border border-border bg-card p-4 sm:p-6">
-                                    <div className="grid gap-4 sm:grid-cols-4">
-                                        <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
-                                            <p className="text-xs text-muted-foreground">TOTAL JOGADO</p>
-                                            <p className="text-2xl font-bold text-foreground">
+                                <div className="mb-6 rounded-xl border border-border/60 bg-card p-4 sm:p-6 animate-slide-up">
+                                    <div className="grid gap-3 sm:grid-cols-4">
+                                        <div className="rounded-xl border border-border/40 bg-secondary/20 p-3">
+                                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Total jogado</p>
+                                            <p className="font-display text-3xl text-foreground">
                                                 {participationStats.totalParticipated ?? 0}
                                             </p>
                                         </div>
-                                        <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
-                                            <p className="text-xs text-muted-foreground">CONFIRMAÇÕES</p>
-                                            <p className="text-2xl font-bold text-primary">{participationStats.totalConfirmed ?? 0}</p>
+                                        <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Confirmações</p>
+                                            <p className="font-display text-3xl text-primary">{participationStats.totalConfirmed ?? 0}</p>
                                         </div>
-                                        <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
-                                            <p className="text-xs text-muted-foreground">NÃO COMPARECEU</p>
-                                            <p className="text-2xl font-bold text-destructive">{participationStats.totalNoShow ?? 0}</p>
+                                        <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
+                                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Não compareceu</p>
+                                            <p className="font-display text-3xl text-destructive">{participationStats.totalNoShow ?? 0}</p>
                                         </div>
-                                        <div className="rounded-md border border-border/50 bg-secondary/30 p-3">
-                                            <p className="text-xs text-muted-foreground">TAXA CONFIRMAÇÃO</p>
-                                            <p className="text-2xl font-bold text-accent">{participationStats.confirmationRate ?? 0}%</p>
+                                        <div className="rounded-xl border border-accent/20 bg-accent/5 p-3">
+                                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Taxa confirmação</p>
+                                            <p className="font-display text-3xl text-accent">{participationStats.confirmationRate ?? 0}%</p>
                                         </div>
                                     </div>
 
                                     {participationStats.badges && participationStats.badges.length > 0 && (
                                         <div className="mt-4">
-                                            <p className="mb-2 text-xs font-medium text-muted-foreground">BADGES DESBLOQUEADOS</p>
+                                            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Badges desbloqueados</p>
                                             <div className="flex flex-wrap gap-2">
                                                 {participationStats.badges.map((badge: ParticipationBadge) => (
                                                     <div
                                                         key={badge.id}
-                                                        className="rounded-full bg-primary/10 px-3 py-1 text-sm"
+                                                        className="rounded-full bg-primary/10 px-3 py-1 text-sm ring-1 ring-primary/20"
                                                         title={badge.description}
                                                     >
                                                         <span className="mr-1">{badge.icon}</span>
@@ -1685,7 +1530,7 @@ const Index = () => {
                                 </div>
                                 {myPeladas.length > 0 ? (
                                     <div className="space-y-3">
-                                        {myPeladas.map((pelada) => renderPeladaCard(pelada, { showAdminActions: true }))}
+                                        {myPeladas.map((pelada) => renderCard(pelada, { showAdminActions: true }))}
                                     </div>
                                 ) : (
                                     <div className="rounded-lg border border-border bg-card p-8 text-center">
@@ -2005,8 +1850,8 @@ const Index = () => {
                                             <div className="rounded-lg border-2 border-primary/30 bg-secondary/20 p-2 text-center">
                                                 <p className="text-xs font-semibold uppercase tracking-wide text-primary">Próxima pelada</p>
                                             </div>
-                                            {renderPeladaCard(availablePeladas[0], { availableCard: true, isNextUpcoming: true })}
-                                            {availablePeladas.slice(1).map((pelada) => renderPeladaCard(pelada, { availableCard: true }))}
+                                            {renderCard(availablePeladas[0], { availableCard: true, isNextUpcoming: true })}
+                                            {availablePeladas.slice(1).map((pelada) => renderCard(pelada, { availableCard: true }))}
                                         </>
                                     )}
                                 </div>
@@ -2019,7 +1864,7 @@ const Index = () => {
                                     <h2 className="font-display text-xl text-foreground">MINHAS PELADAS (ADMIN)</h2>
                                 </div>
                                 <div className="space-y-3">
-                                    {myPeladas.slice(0, 3).map((pelada) => renderPeladaCard(pelada, { showAdminActions: true }))}
+                                    {myPeladas.slice(0, 3).map((pelada) => renderCard(pelada, { showAdminActions: true }))}
                                 </div>
                             </>
                         )}
