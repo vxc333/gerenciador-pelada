@@ -1756,7 +1756,7 @@ const Index = () => {
                                                                                     </div>
                                                                                 </div>
 
-                                                                                <div className="flex items-center gap-2">
+                                                                                <div className="flex flex-wrap items-center gap-2">
                                                                                     <Input
                                                                                         type="number"
                                                                                         min={1}
@@ -1771,7 +1771,6 @@ const Index = () => {
                                                                                         }
                                                                                         disabled={!!banPermanentByUser[c.user_id]}
                                                                                     />
-
                                                                                     <label className="flex items-center gap-1 text-xs text-muted-foreground">
                                                                                         <input
                                                                                             type="checkbox"
@@ -1785,35 +1784,33 @@ const Index = () => {
                                                                                         />
                                                                                         Permanente
                                                                                     </label>
-
-                                                                                        <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                                                                                            <input
-                                                                                                type="checkbox"
-                                                                                                checked={!!banApplyAllByUser[c.user_id]}
-                                                                                                onChange={(e) =>
-                                                                                                    setBanApplyAllByUser((prev) => ({
-                                                                                                        ...prev,
-                                                                                                        [c.user_id]: e.target.checked,
-                                                                                                    }))
-                                                                                                }
-                                                                                                disabled={!isSuperAdmin}
-                                                                                            />
-                                                                                            Aplicar a todas peladas
-                                                                                        </label>
-
-                                                                                        {isBanned ? (
-                                                                                            <Button variant="outline" size="sm" onClick={() => unbanUser(pelada.id, c.user_id, !!activeSystemBanUserIds.has(c.user_id))}>
-                                                                                                Desbanir
-                                                                                            </Button>
-                                                                                        ) : (
-                                                                                            <Button
-                                                                                                variant="destructive"
-                                                                                                size="sm"
-                                                                                                onClick={() => banUser(pelada.id, c.user_id, !!banPermanentByUser[c.user_id], !!banApplyAllByUser[c.user_id])}
-                                                                                            >
-                                                                                                {banPermanentByUser[c.user_id] ? "Banir permanentemente" : "Banir"}
-                                                                                            </Button>
-                                                                                        )}
+                                                                                    <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            checked={!!banApplyAllByUser[c.user_id]}
+                                                                                            onChange={(e) =>
+                                                                                                setBanApplyAllByUser((prev) => ({
+                                                                                                    ...prev,
+                                                                                                    [c.user_id]: e.target.checked,
+                                                                                                }))
+                                                                                            }
+                                                                                            disabled={!isSuperAdmin}
+                                                                                        />
+                                                                                        Todas peladas
+                                                                                    </label>
+                                                                                    {isBanned ? (
+                                                                                        <Button variant="outline" size="sm" onClick={() => unbanUser(pelada.id, c.user_id, !!activeSystemBanUserIds.has(c.user_id))}>
+                                                                                            Desbanir
+                                                                                        </Button>
+                                                                                    ) : (
+                                                                                        <Button
+                                                                                            variant="destructive"
+                                                                                            size="sm"
+                                                                                            onClick={() => banUser(pelada.id, c.user_id, !!banPermanentByUser[c.user_id], !!banApplyAllByUser[c.user_id])}
+                                                                                        >
+                                                                                            {banPermanentByUser[c.user_id] ? "Banir permanentemente" : "Banir"}
+                                                                                        </Button>
+                                                                                    )}
                                                                                 </div>
                                                                             </div>
                                                                         );

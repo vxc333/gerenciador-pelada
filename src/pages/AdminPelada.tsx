@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, Download, Link as LinkIcon, Shuffle, Trash2, X } from "lucide-react";
+import { Check, Download, Link as LinkIcon, Shield, Shuffle, Trash2, X } from "lucide-react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AdminTabs } from "@/components/admin/AdminTabs";
 import { toast } from "sonner";
@@ -1631,7 +1631,7 @@ const AdminPelada = () => {
 
                 return (
                   <div key={member.id} className="rounded-lg border border-border/60 bg-secondary/20 p-2 transition-colors hover:bg-secondary/40">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-start justify-between gap-2">
                       <span className="text-sm text-foreground">
                         {getMemberDisplayName(member)}
                         {entry.isGoalkeeper ? " (goleiro)" : ""}
@@ -1643,77 +1643,75 @@ const AdminPelada = () => {
                           </span>
                         ) : null}
                       </span>
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="number"
-                          min={0}
-                          max={100}
-                          className="h-8 w-20"
-                          value={member.priority_score}
-                          onChange={(e) => updateMemberPriority(member.id, Number(e.target.value || 0))}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => deleteMember(member.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        className="h-8 w-20"
+                        placeholder="Prioridade"
+                        value={member.priority_score}
+                        onChange={(e) => updateMemberPriority(member.id, Number(e.target.value || 0))}
+                      />
+                      <Input
+                        type="number"
+                        min={1}
+                        max={365}
+                        className="h-8 w-20"
+                        placeholder="Dias ban"
+                        value={banDaysByUser[member.user_id] || 7}
+                        onChange={(e) =>
+                          setBanDaysByUser((prev) => ({
+                            ...prev,
+                            [member.user_id]: Number(e.target.value || 1),
+                          }))
+                        }
+                        disabled={!!banPermanentByUser[member.user_id]}
+                      />
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={!!banPermanentByUser[member.user_id]}
+                          onChange={(e) =>
+                            setBanPermanentByUser((prev) => ({
+                              ...prev,
+                              [member.user_id]: e.target.checked,
+                            }))
+                          }
                         />
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            min={1}
-                            max={365}
-                            className="h-8 w-20"
-                            value={banDaysByUser[member.user_id] || 7}
-                            onChange={(e) =>
-                              setBanDaysByUser((prev) => ({
-                                ...prev,
-                                [member.user_id]: Number(e.target.value || 1),
-                              }))
-                            }
-                            disabled={!!banPermanentByUser[member.user_id]}
-                          />
-                          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <input
-                              type="checkbox"
-                              checked={!!banPermanentByUser[member.user_id]}
-                              onChange={(e) =>
-                                setBanPermanentByUser((prev) => ({
-                                  ...prev,
-                                  [member.user_id]: e.target.checked,
-                                }))
-                              }
-                            />
-                            Permanente
-                          </label>
-
-                          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <input
-                              type="checkbox"
-                              checked={!!banApplyAllByUser[member.user_id]}
-                              onChange={(e) =>
-                                setBanApplyAllByUser((prev) => ({
-                                  ...prev,
-                                  [member.user_id]: e.target.checked,
-                                }))
-                              }
-                              disabled={!isSuperAdmin}
-                            />
-                            Aplicar a todas peladas
-                          </label>
-
-                          {bannedUserIds.has(member.user_id) ? (
-                            <Button variant="outline" size="sm" onClick={() => unbanUser(member.user_id, !!activeSystemBanUserIds.has(member.user_id))}>
-                              Desbanir
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => banUser(member.user_id, !!banPermanentByUser[member.user_id], !!banApplyAllByUser[member.user_id])}
-                            >
-                              {banPermanentByUser[member.user_id] ? "Banir permanentemente" : "Banir dias"}
-                            </Button>
-                          )}
-                        </div>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteMember(member.id)}>
-                          <Trash2 className="h-4 w-4" />
+                        Permanente
+                      </label>
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={!!banApplyAllByUser[member.user_id]}
+                          onChange={(e) =>
+                            setBanApplyAllByUser((prev) => ({
+                              ...prev,
+                              [member.user_id]: e.target.checked,
+                            }))
+                          }
+                          disabled={!isSuperAdmin}
+                        />
+                        Todas peladas
+                      </label>
+                      {bannedUserIds.has(member.user_id) ? (
+                        <Button variant="outline" size="sm" onClick={() => unbanUser(member.user_id, !!activeSystemBanUserIds.has(member.user_id))}>
+                          Desbanir
                         </Button>
-                      </div>
+                      ) : (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => banUser(member.user_id, !!banPermanentByUser[member.user_id], !!banApplyAllByUser[member.user_id])}
+                        >
+                          {banPermanentByUser[member.user_id] ? "Banir permanentemente" : "Banir dias"}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
