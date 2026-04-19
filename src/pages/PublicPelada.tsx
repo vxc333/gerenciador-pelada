@@ -63,6 +63,7 @@ const PublicPelada = () => {
   const [isGoalkeeper, setIsGoalkeeper] = useState(false);
   const [myJoinRequest, setMyJoinRequest] = useState<JoinRequestRow | null>(null);
   const [myProfile, setMyProfile] = useState<UserProfileRow | null>(null);
+  const [profilesByUserId, setProfilesByUserId] = useState<Record<string, UserProfileRow>>({});
   const [isDelegatedAdmin, setIsDelegatedAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isAutomaticMember, setIsAutomaticMember] = useState(false);
@@ -159,6 +160,19 @@ const PublicPelada = () => {
 
     setMembers(membersData || []);
     setGuests(guestsData || []);
+
+    const memberIds = (membersData || []).filter((m) => !m.admin_selected).map((m) => m.user_id);
+    if (memberIds.length > 0) {
+      const { data: profilesData } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .in("user_id", memberIds);
+      const map: Record<string, UserProfileRow> = {};
+      (profilesData || []).forEach((p) => { map[p.user_id] = p; });
+      setProfilesByUserId(map);
+    } else {
+      setProfilesByUserId({});
+    }
   }, [id, user]);
 
   useEffect(() => {
@@ -837,11 +851,16 @@ const PublicPelada = () => {
     }
   };
 
+  const getMemberDisplayName = (member: MemberRow) => {
+    if (member.admin_selected) return member.member_name;
+    return profilesByUserId[member.user_id]?.display_name || member.member_name;
+  };
+
   const formatEntryName = (entry: PeladaListEntry) => {
-    if (entry.kind === "member") return entry.member.member_name;
+    if (entry.kind === "member") return getMemberDisplayName(entry.member);
     const guestName: string = entry.guest.guest_name || "";
     const cleaned = guestName.replace(/\s*\(goleiro\)\s*$/i, "");
-    const host = entry.hostMember?.member_name;
+    const host = entry.hostMember ? getMemberDisplayName(entry.hostMember) : undefined;
     return host ? `${cleaned} (${host})` : cleaned;
   };
 
@@ -863,12 +882,10 @@ const PublicPelada = () => {
     const nonGkNonWaiting = orderedListEntries.filter((e) => !e.isGoalkeeper && !e.isWaiting).map((e) => formatEntryName(e));
     const gkList = orderedListEntries.filter((e) => e.isGoalkeeper && !e.isWaiting).map((e) => formatEntryName(e));
     const waitList = orderedListEntries.filter((e) => e.isWaiting).map((e) => {
-      const name = e.kind === "member" ? e.member.member_name : e.guest.guest_name.replace(/\s*\(goleiro\)\s*$/i, "");
-      if (e.kind === "guest") {
-        const host = e.hostMember?.member_name;
-        return host ? `${name} (${host})` : name;
-      }
-      return name;
+      if (e.kind === "member") return getMemberDisplayName(e.member);
+      const name = e.guest.guest_name.replace(/\s*\(goleiro\)\s*$/i, "");
+      const host = e.hostMember ? getMemberDisplayName(e.hostMember) : undefined;
+      return host ? `${name} (${host})` : name;
     });
 
     const lines: string[] = [];
@@ -1194,7 +1211,7 @@ const PublicPelada = () => {
               ) : (
                 pendingGuestRequests.map((guest) => {
                   const hostMember = members.find((member) => member.id === guest.pelada_member_id);
-                  const hostName = hostMember?.member_name || "responsável removido";
+                  const hostName = hostMember ? getMemberDisplayName(hostMember) : "responsável removido";
 
                   return (
                     <div key={guest.id} className="rounded-md border border-border bg-secondary/40 p-2">
@@ -1257,11 +1274,11 @@ const PublicPelada = () => {
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <Avatar className="h-7 w-7">
-                            <AvatarImage src={member.member_avatar_url || undefined} alt={member.member_name} />
-                            <AvatarFallback className="text-[11px] font-semibold">{getInitial(member.member_name)}</AvatarFallback>
+                            <AvatarImage src={member.member_avatar_url || undefined} alt={getMemberDisplayName(member)} />
+                            <AvatarFallback className="text-[11px] font-semibold">{getInitial(getMemberDisplayName(member))}</AvatarFallback>
                           </Avatar>
                           <span className="text-sm text-foreground">
-                            {member.member_name}
+                            {getMemberDisplayName(member)}
                             {entry.isGoalkeeper ? " (goleiro)" : ""}
                             {entry.isWaiting ? " (espera)" : ""}
                             {pelada.list_priority_mode === "member_priority" ? ` (prio ${member.priority_score})` : ""}
@@ -1336,7 +1353,7 @@ const PublicPelada = () => {
                         )}
                       </div>
                     </div>
-                    <p className="mt-1 text-muted-foreground">Responsável: {entry.hostMember?.member_name || "participante removido"}</p>
+                    <p className="mt-1 text-muted-foreground">Responsável: {entry.hostMember ? getMemberDisplayName(entry.hostMember) : "participante removido"}</p>
                   </div>
                 );
               })}
