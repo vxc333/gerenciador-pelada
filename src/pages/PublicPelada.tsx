@@ -557,6 +557,22 @@ const PublicPelada = () => {
       return;
     }
 
+    if (!toWaiting) {
+      const activeCountInRole = orderedListEntries.filter(
+        (currentEntry) => !currentEntry.isWaiting && currentEntry.isGoalkeeper === entry.isGoalkeeper,
+      ).length;
+      const roleCapacity = entry.isGoalkeeper ? pelada.max_goalkeepers : pelada.max_players;
+
+      if (activeCountInRole >= roleCapacity) {
+        toast.error(
+          entry.isGoalkeeper
+            ? `Lista principal de goleiros cheia (${activeCountInRole}/${roleCapacity})`
+            : `Lista principal de jogadores cheia (${activeCountInRole}/${roleCapacity})`,
+        );
+        return;
+      }
+    }
+
     const entryId = `${entry.kind}-${entry.id}`;
     setMovingEntryId(entryId);
 
