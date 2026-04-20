@@ -25,7 +25,7 @@ interface AdminTabsProps {
 
 export const AdminTabs = memo(function AdminTabs({ active, onChange, pendingCount = 0 }: AdminTabsProps) {
   return (
-    <div className="rounded-xl border border-border/60 bg-card/50 p-1.5 backdrop-blur-sm">
+    <div className="rounded-xl border border-border/50 bg-card/60 p-1.5 backdrop-blur-sm">
       <div className="flex flex-wrap gap-1">
         {TABS.map(({ key, label, icon: Icon }) => {
           const isActive = active === key;
@@ -35,9 +35,9 @@ export const AdminTabs = memo(function AdminTabs({ active, onChange, pendingCoun
               key={key}
               onClick={() => onChange(key)}
               className={[
-                "relative flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all",
+                "relative flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-200 ease-out",
                 isActive
-                  ? "bg-primary text-primary-foreground shadow-sm"
+                  ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-secondary hover:text-foreground",
               ].join(" ")}
             >

@@ -1,37 +1,79 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { AppHeader } from "@/components/layout/AppHeader";
+import { PageContent, PageSectionCard } from "@/components/layout/PageLayout";
+import { PageState } from "@/components/layout/PageState";
+import { SystemAccessSection } from "@/components/admin/SystemAccessSection";
 import type { Tables } from "@/integrations/supabase/types";
 
 type UserProfileRow = Tables<"user_profiles">;
+type SearchableUserProfile = Pick<UserProfileRow, "user_id" | "display_name">;
 
-interface AutomaticMember {
+interface AutomaticAccessEntry {
   id: string;
   user_id: string;
   display_name: string;
   created_at: string;
 }
 
-interface AutomaticAdmin {
-  id: string;
-  user_id: string;
-  display_name: string;
-  created_at: string;
-}
+type AccessTable = "pelada_automatic_members" | "pelada_automatic_admins";
 
 const AdminSystem = () => {
   const { user, loading, profileChecked } = useAuth();
 
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [automaticMembers, setAutomaticMembers] = useState<AutomaticMember[]>([]);
-  const [automaticAdmins, setAutomaticAdmins] = useState<AutomaticAdmin[]>([]);
+  const [automaticMembers, setAutomaticMembers] = useState<AutomaticAccessEntry[]>([]);
+  const [automaticAdmins, setAutomaticAdmins] = useState<AutomaticAccessEntry[]>([]);
   const [searchMemberEmail, setSearchMemberEmail] = useState("");
   const [searchAdminEmail, setSearchAdminEmail] = useState("");
+
+  const loadAccessEntries = useCallback(async (table: AccessTable) => {
+    const { data } = await supabase
+      .from(table)
+      .select("id, user_id, created_at")
+      .order("created_at", { ascending: false });
+
+    if (!data || data.length === 0) return [];
+
+    const userIds = data.map((row) => row.user_id);
+    const { data: profiles } = await supabase.from("user_profiles").select("user_id, display_name").in("user_id", userIds);
+
+    const profileMap: Record<string, string> = {};
+    (profiles || []).forEach((profile) => {
+      profileMap[profile.user_id] = profile.display_name;
+    });
+
+    return data.map((row) => ({
+      id: row.id,
+      user_id: row.user_id,
+      display_name: profileMap[row.user_id] || "Usuário sem nome",
+      created_at: row.created_at,
+    }));
+  }, []);
+
+  const findProfileByName = useCallback(async (searchTerm: string): Promise<SearchableUserProfile | null> => {
+    const trimmed = searchTerm.trim();
+    if (!trimmed) {
+      toast.error("Digite um nome válido");
+      return null;
+    }
+
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("user_id, display_name")
+      .ilike("display_name", `%${trimmed}%`)
+      .single();
+
+    if (!profile) {
+      toast.error("Usuário não encontrado");
+      return null;
+    }
+
+    return profile;
+  }, []);
 
   // Check if user is super admin and load data
   const loadData = useCallback(async () => {
@@ -46,64 +88,14 @@ const AdminSystem = () => {
 
     setIsSuperAdmin(true);
 
-    // Load automatic members
-    const { data: membersData } = await supabase
-      .from("pelada_automatic_members")
-      .select(`
-        id,
-        user_id,
-        created_at
-      `)
-      .order("created_at", { ascending: false });
+    const [members, admins] = await Promise.all([
+      loadAccessEntries("pelada_automatic_members"),
+      loadAccessEntries("pelada_automatic_admins"),
+    ]);
 
-    if (membersData) {
-      const memberIds = membersData.map((m) => m.user_id);
-      const { data: profiles } = await supabase.from("user_profiles").select("user_id, display_name").in("user_id", memberIds);
-
-      const profileMap: Record<string, string> = {};
-      profiles?.forEach((p) => {
-        profileMap[p.user_id] = p.display_name;
-      });
-
-      const members = membersData.map((m) => ({
-        id: m.id,
-        user_id: m.user_id,
-        display_name: profileMap[m.user_id] || "Usuário sem nome",
-        created_at: m.created_at,
-      }));
-
-      setAutomaticMembers(members);
-    }
-
-    // Load automatic admins
-    const { data: adminsData } = await supabase
-      .from("pelada_automatic_admins")
-      .select(`
-        id,
-        user_id,
-        created_at
-      `)
-      .order("created_at", { ascending: false });
-
-    if (adminsData) {
-      const adminIds = adminsData.map((a) => a.user_id);
-      const { data: profiles } = await supabase.from("user_profiles").select("user_id, display_name").in("user_id", adminIds);
-
-      const profileMap: Record<string, string> = {};
-      profiles?.forEach((p) => {
-        profileMap[p.user_id] = p.display_name;
-      });
-
-      const admins = adminsData.map((a) => ({
-        id: a.id,
-        user_id: a.user_id,
-        display_name: profileMap[a.user_id] || "Usuário sem nome",
-        created_at: a.created_at,
-      }));
-
-      setAutomaticAdmins(admins);
-    }
-  }, [user]);
+    setAutomaticMembers(members);
+    setAutomaticAdmins(admins);
+  }, [loadAccessEntries, user]);
 
   useEffect(() => {
     if (user && profileChecked) {
@@ -111,224 +103,128 @@ const AdminSystem = () => {
     }
   }, [user, profileChecked, loadData]);
 
-  // Add user to automatic members
-  const addAutomaticMember = async () => {
-    if (!searchMemberEmail.trim()) {
-      toast.error("Digite um email válido");
-      return;
-    }
+  const addAccessEntry = useCallback(
+    async (
+      table: AccessTable,
+      searchValue: string,
+      duplicateMessage: string,
+      genericErrorMessage: string,
+      successMessage: (displayName: string) => string,
+      clearSearch: () => void
+    ) => {
+      const profile = await findProfileByName(searchValue);
+      if (!profile) return;
 
-    const { data: profile } = await supabase
-      .from("user_profiles")
-      .select("user_id, display_name")
-      .ilike("display_name", `%${searchMemberEmail}%`)
-      .single();
+      const payload =
+        table === "pelada_automatic_admins"
+          ? { user_id: profile.user_id, created_by: user?.id }
+          : { user_id: profile.user_id };
 
-    if (!profile) {
-      toast.error("Usuário não encontrado");
-      return;
-    }
-
-    const { error } = await supabase.from("pelada_automatic_members").insert({
-      user_id: profile.user_id,
-    });
-
-    if (error) {
-      if (error.code === "23505") {
-        toast.error("Este usuário já está na lista de acesso automático");
-      } else {
-        toast.error("Erro ao adicionar usuário");
+      const { error } = await supabase.from(table).insert(payload);
+      if (error) {
+        if (error.code === "23505") {
+          toast.error(duplicateMessage);
+        } else {
+          toast.error(genericErrorMessage);
+        }
+        return;
       }
-      return;
-    }
 
-    toast.success(`${profile.display_name} adicionado ao acesso automático`);
-    setSearchMemberEmail("");
-    loadData();
-  };
+      toast.success(successMessage(profile.display_name));
+      clearSearch();
+      loadData();
+    },
+    [findProfileByName, loadData, user?.id]
+  );
 
-  // Remove user from automatic members
-  const removeAutomaticMember = async (id: string) => {
-    const { error } = await supabase.from("pelada_automatic_members").delete().eq("id", id);
+  const removeAccessEntry = useCallback(
+    async (table: AccessTable, id: string, errorMessage: string, successMessage: string) => {
+      const { error } = await supabase.from(table).delete().eq("id", id);
 
-    if (error) {
-      toast.error("Erro ao remover usuário");
-      return;
-    }
-
-    toast.success("Usuário removido do acesso automático");
-    loadData();
-  };
-
-  // Add user to automatic admins
-  const addAutomaticAdmin = async () => {
-    if (!searchAdminEmail.trim()) {
-      toast.error("Digite um email válido");
-      return;
-    }
-
-    const { data: profile } = await supabase
-      .from("user_profiles")
-      .select("user_id, display_name")
-      .ilike("display_name", `%${searchAdminEmail}%`)
-      .single();
-
-    if (!profile) {
-      toast.error("Usuário não encontrado");
-      return;
-    }
-
-    const { error } = await supabase.from("pelada_automatic_admins").insert({
-      user_id: profile.user_id,
-      created_by: user?.id,
-    });
-
-    if (error) {
-      if (error.code === "23505") {
-        toast.error("Este usuário já é admin automático");
-      } else {
-        toast.error("Erro ao adicionar admin");
+      if (error) {
+        toast.error(errorMessage);
+        return;
       }
-      return;
-    }
 
-    toast.success(`${profile.display_name} promovido a admin do sistema`);
-    setSearchAdminEmail("");
-    loadData();
+      toast.success(successMessage);
+      loadData();
+    },
+    [loadData]
+  );
+
+  const addAutomaticMember = () => {
+    addAccessEntry(
+      "pelada_automatic_members",
+      searchMemberEmail,
+      "Este usuário já está na lista de acesso automático",
+      "Erro ao adicionar usuário",
+      (displayName) => `${displayName} adicionado ao acesso automático`,
+      () => setSearchMemberEmail("")
+    );
   };
 
-  // Remove user from automatic admins
-  const removeAutomaticAdmin = async (id: string) => {
-    const { error } = await supabase.from("pelada_automatic_admins").delete().eq("id", id);
+  const addAutomaticAdmin = () => {
+    addAccessEntry(
+      "pelada_automatic_admins",
+      searchAdminEmail,
+      "Este usuário já é admin automático",
+      "Erro ao adicionar admin",
+      (displayName) => `${displayName} promovido a admin do sistema`,
+      () => setSearchAdminEmail("")
+    );
+  };
 
-    if (error) {
-      toast.error("Erro ao remover admin");
-      return;
-    }
+  const removeAutomaticMember = (id: string) => {
+    removeAccessEntry("pelada_automatic_members", id, "Erro ao remover usuário", "Usuário removido do acesso automático");
+  };
 
-    toast.success("Admin removido do sistema");
-    loadData();
+  const removeAutomaticAdmin = (id: string) => {
+    removeAccessEntry("pelada_automatic_admins", id, "Erro ao remover admin", "Admin removido do sistema");
   };
 
   if (loading || !profileChecked) return null;
   if (!user) return <Navigate to="/auth" replace />;
 
   if (!isSuperAdmin) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-muted-foreground">Você não tem permissão para acessar este painel.</p>
-      </div>
-    );
+    return <PageState message="Você não tem permissão para acessar este painel." />;
   }
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="container mx-auto flex items-center gap-3 px-4 py-3">
-          <Link to="/">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate font-display text-xl text-primary sm:text-2xl">PAINEL ADMINISTRATIVO DO SISTEMA</h1>
-            <p className="truncate text-xs text-muted-foreground sm:text-sm">Gerencie acessos automáticos e admins globais</p>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        title="PAINEL ADMINISTRATIVO DO SISTEMA"
+        subtitle="Gerencie acessos automáticos e admins globais"
+        backTo="/"
+      />
 
-      <main className="container mx-auto max-w-2xl space-y-5 px-4 py-5">
-        {/* Automatic Members Section */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">MEMBROS COM ACESSO AUTOMÁTICO</h2>
-          <p className="mb-4 text-xs text-muted-foreground">
-            Usuários nesta lista entram automaticamente em todas as peladas novas. Eles foram aprovados uma vez e não precisam solicitar novamente.
-          </p>
+      <PageContent className="max-w-2xl space-y-5">
+        <SystemAccessSection
+          title="MEMBROS COM ACESSO AUTOMÁTICO"
+          description="Usuários nesta lista entram automaticamente em todas as peladas novas. Eles foram aprovados uma vez e não precisam solicitar novamente."
+          placeholder="Buscar por nome..."
+          searchValue={searchMemberEmail}
+          onSearchChange={setSearchMemberEmail}
+          onSubmit={addAutomaticMember}
+          submitLabel="Adicionar"
+          emptyLabel="Nenhum membro com acesso automático"
+          entries={automaticMembers}
+          onRemove={removeAutomaticMember}
+        />
 
-          <div className="mb-4 flex gap-2">
-            <Input
-              placeholder="Buscar por nome..."
-              value={searchMemberEmail}
-              onChange={(e) => setSearchMemberEmail(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && addAutomaticMember()}
-              className="border-border bg-secondary"
-            />
-            <Button onClick={addAutomaticMember} className="gap-2">
-              <Plus className="h-4 w-4" /> Adicionar
-            </Button>
-          </div>
+        <SystemAccessSection
+          title="ADMINS DO SISTEMA"
+          description="Usuários nesta lista são admins de TODAS as peladas e do sistema. Eles são auto-promovidos quando delegados como admin em qualquer pelada."
+          placeholder="Buscar por nome..."
+          searchValue={searchAdminEmail}
+          onSearchChange={setSearchAdminEmail}
+          onSubmit={addAutomaticAdmin}
+          submitLabel="Adicionar"
+          emptyLabel="Nenhum admin do sistema"
+          entries={automaticAdmins}
+          onRemove={removeAutomaticAdmin}
+        />
 
-          <div className="space-y-2">
-            {automaticMembers.length === 0 ? (
-              <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">Nenhum membro com acesso automático</p>
-            ) : (
-              automaticMembers.map((member) => (
-                <div key={member.id} className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-2">
-                  <div>
-                    <p className="text-sm text-foreground">{member.display_name}</p>
-                    <p className="text-xs text-muted-foreground">{member.user_id}</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => removeAutomaticMember(member.id)}
-                    className="gap-1"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Remover
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Automatic Admins Section */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">ADMINS DO SISTEMA</h2>
-          <p className="mb-4 text-xs text-muted-foreground">
-            Usuários nesta lista são admins de TODAS as peladas e do sistema. Eles são auto-promovidos quando delegados como admin em qualquer pelada.
-          </p>
-
-          <div className="mb-4 flex gap-2">
-            <Input
-              placeholder="Buscar por nome..."
-              value={searchAdminEmail}
-              onChange={(e) => setSearchAdminEmail(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && addAutomaticAdmin()}
-              className="border-border bg-secondary"
-            />
-            <Button onClick={addAutomaticAdmin} className="gap-2">
-              <Plus className="h-4 w-4" /> Adicionar
-            </Button>
-          </div>
-
-          <div className="space-y-2">
-            {automaticAdmins.length === 0 ? (
-              <p className="rounded-md bg-muted p-3 text-center text-sm text-muted-foreground">Nenhum admin do sistema</p>
-            ) : (
-              automaticAdmins.map((admin) => (
-                <div key={admin.id} className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-2">
-                  <div>
-                    <p className="text-sm text-foreground">{admin.display_name}</p>
-                    <p className="text-xs text-muted-foreground">{admin.user_id}</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => removeAutomaticAdmin(admin.id)}
-                    className="gap-1"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Remover
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Info Box */}
-        <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
-          <h3 className="mb-2 font-semibold text-foreground">Como funciona?</h3>
+        <PageSectionCard title="Como funciona?" className="border-border/50 bg-muted/30">
           <ul className="space-y-2 text-xs text-muted-foreground">
             <li>
               <strong>Acesso Automático:</strong> Quando um membro é aprovado em uma pelada, ele entra automaticamente nesta lista e passa a entrar automaticamente em todas as novas peladas.
@@ -340,8 +236,8 @@ const AdminSystem = () => {
               <strong>Super Admin:</strong> Apenas super admins podem gerenciar estas listas globais.
             </li>
           </ul>
-        </div>
-      </main>
+        </PageSectionCard>
+      </PageContent>
     </div>
   );
 };

@@ -5,9 +5,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, Download, Link as LinkIcon, Shield, Shuffle, Trash2, X } from "lucide-react";
+import { Check, Clock, Download, Heart, Link as LinkIcon, List, Settings, Shield, Shuffle, Trash2, Users, X } from "lucide-react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AdminTabs } from "@/components/admin/AdminTabs";
+import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
+import { PageState } from "@/components/layout/PageState";
 import { toast } from "sonner";
 import {
   formatDateBrasiliaLong,
@@ -537,19 +539,11 @@ const AdminPelada = () => {
   if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
 
   if (notFound) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-muted-foreground">Pelada não encontrada</p>
-      </div>
-    );
+    return <PageState message="Pelada não encontrada" />;
   }
 
   if (forbidden) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-muted-foreground">Você não tem permissão para administrar esta pelada.</p>
-      </div>
-    );
+    return <PageState message="Você não tem permissão para administrar esta pelada." />;
   }
 
   if (!pelada) return null;
@@ -1257,6 +1251,13 @@ const AdminPelada = () => {
 
   const totalConfiguredPlayers = Math.max(0, editNumTeams) * Math.max(0, editPlayersPerTeam);
   const totalCurrentConfirmed = members.length + approvedGuests.length;
+  const mobileNavItems: Array<{ key: AdminMenu; label: string; icon: typeof Settings }> = [
+    { key: "config", label: "Config", icon: Settings },
+    { key: "lista", label: "Lista", icon: List },
+    { key: "historico", label: "Hist", icon: Clock },
+    { key: "membros", label: "Membros", icon: Users },
+    { key: "queridometro", label: "Qmetro", icon: Heart },
+  ];
 
   return (
     <div className="min-h-screen bg-background">
@@ -1266,12 +1267,14 @@ const AdminPelada = () => {
         backTo="/"
       />
 
-      <main className="container mx-auto space-y-4 px-4 py-6">
-        <AdminTabs
-          active={activeMenu}
-          onChange={setActiveMenu}
-          pendingCount={pendingRequests.length + pendingGuestRequests.length}
-        />
+      <main className="container mx-auto space-y-4 px-4 py-6 pb-28 lg:pb-6">
+        <div className="hidden lg:block">
+          <AdminTabs
+            active={activeMenu}
+            onChange={setActiveMenu}
+            pendingCount={pendingRequests.length + pendingGuestRequests.length}
+          />
+        </div>
 
         <div className="rounded-xl border border-border/60 bg-gradient-to-r from-primary/5 to-card p-4">
           <h2 className="mb-2 font-display text-lg text-primary">AÇÕES RÁPIDAS</h2>
@@ -1287,6 +1290,7 @@ const AdminPelada = () => {
           </div>
         </div>
 
+        <div key={activeMenu} className="animate-fade-in">
         {activeMenu === "config" && (
         <>
         <div className="rounded-xl border border-border/60 bg-card p-4 animate-fade-in">
@@ -1638,7 +1642,7 @@ const AdminPelada = () => {
                         {entry.isWaiting ? " (espera)" : ""}
                         {bannedUserIds.has(member.user_id) ? " (banido)" : ""}
                         {member.is_automatic_entry ? (
-                          <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-500/20 px-1.5 py-0.5 text-xs text-green-600">
+                          <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 text-xs text-primary">
                             Automático
                           </span>
                         ) : null}
@@ -1906,6 +1910,7 @@ const AdminPelada = () => {
           </div>
         </div>
         )}
+        </div>
 
         {pelada.draw_done_at && Array.isArray(pelada.draw_result) && (
           <div className="rounded-lg border border-accent/30 bg-card p-4">
@@ -1931,6 +1936,12 @@ const AdminPelada = () => {
             </div>
           </div>
         )}
+
+        <MobileSectionNav
+          items={mobileNavItems}
+          activeKey={activeMenu}
+          onChange={(key) => setActiveMenu(key as AdminMenu)}
+        />
       </main>
     </div>
   );
