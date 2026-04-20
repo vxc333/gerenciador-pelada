@@ -83,9 +83,9 @@ export const PeladaCardComponent = memo(function PeladaCard({
   return (
     <div
       className={[
-        "rounded-xl border p-4 transition-all duration-200 card-hover animate-slide-up",
+        "rounded-xl border p-5 transition-all duration-200 card-hover animate-slide-up",
         isNextUpcoming
-          ? "border-primary/60 bg-gradient-to-br from-primary/10 to-card shadow-lg glow-primary"
+          ? "border-primary/60 bg-gradient-to-b from-background to-card glow-primary"
           : "border-border bg-card",
       ].join(" ")}
     >
