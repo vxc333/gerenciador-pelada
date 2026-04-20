@@ -19,14 +19,14 @@ export const AppHeader = memo(function AppHeader({
   actions,
 }: AppHeaderProps) {
   return (
-    <header className="sticky top-0 z-40 border-b border-border/60 bg-card/80 backdrop-blur-sm">
-      <div className="container mx-auto flex items-center gap-3 px-4 py-3">
+    <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-md">
+      <div className="container mx-auto flex items-center gap-3 px-4 py-3.5 sm:px-6">
         {backTo && (
           <Link to={backTo}>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-primary"
+              className="h-9 w-9 shrink-0 text-muted-foreground transition-all hover:bg-secondary hover:text-primary active:scale-[0.97]"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -48,7 +48,7 @@ export const AppHeader = memo(function AppHeader({
             <Button
               variant="ghost"
               onClick={onSignOut}
-              className="gap-2 text-muted-foreground hover:text-destructive"
+              className="gap-2 text-muted-foreground transition-all hover:bg-secondary hover:text-destructive active:scale-[0.97]"
             >
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Sair</span>
