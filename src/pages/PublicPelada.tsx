@@ -557,15 +557,18 @@ const PublicPelada = () => {
       return;
     }
 
+    const moveUsesHostRole = entry.kind === "guest" && pelada.guest_priority_mode === "grouped_with_member";
+    const roleIsGoalkeeper = moveUsesHostRole && entry.hostMember ? entry.hostMember.is_goalkeeper : entry.isGoalkeeper;
+
     if (!toWaiting) {
       const activeCountInRole = orderedListEntries.filter(
-        (currentEntry) => !currentEntry.isWaiting && currentEntry.isGoalkeeper === entry.isGoalkeeper,
+        (currentEntry) => !currentEntry.isWaiting && currentEntry.isGoalkeeper === roleIsGoalkeeper,
       ).length;
-      const roleCapacity = entry.isGoalkeeper ? pelada.max_goalkeepers : pelada.max_players;
+      const roleCapacity = roleIsGoalkeeper ? pelada.max_goalkeepers : pelada.max_players;
 
       if (activeCountInRole >= roleCapacity) {
         toast.error(
-          entry.isGoalkeeper
+          roleIsGoalkeeper
             ? `Lista principal de goleiros cheia (${activeCountInRole}/${roleCapacity})`
             : `Lista principal de jogadores cheia (${activeCountInRole}/${roleCapacity})`,
         );
@@ -641,8 +644,44 @@ const PublicPelada = () => {
     }
 
     if (pelada.guest_priority_mode === "grouped_with_member") {
+      if (!entry.hostMember) {
+        setMovingEntryId(null);
+        toast.error("Convidado sem responsável ativo não pode ser movido diretamente.");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("pelada_members")
+        .update(buildMemberMovePatch(entry.hostMember.is_goalkeeper))
+        .eq("id", entry.hostMember.id)
+        .eq("pelada_id", pelada.id)
+        .select("id, is_waiting")
+        .maybeSingle();
+
       setMovingEntryId(null);
-      toast.error("Convidado segue a ordem do responsável. Mova o responsável para alterar a posição deste convidado.");
+
+      if (error) {
+        toast.error("Não foi possível mover o responsável do convidado");
+        return;
+      }
+
+      if (!data) {
+        toast.error("Movimentação não aplicada. Verifique suas permissões de admin nesta pelada.");
+        return;
+      }
+
+      if (data.is_waiting !== toWaiting) {
+        toast.error("Não foi possível persistir a movimentação do responsável");
+        fetchAll();
+        return;
+      }
+
+      toast.success(
+        toWaiting
+          ? "Convidado e responsável movidos para a lista de espera"
+          : "Convidado e responsável movidos para a lista principal",
+      );
+      fetchAll();
       return;
     }
 
