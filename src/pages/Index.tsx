@@ -17,6 +17,7 @@ import {
     CheckCircle2,
 } from "lucide-react";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import { NotificationsSheet } from "@/components/pelada/NotificationsSheet";
 import { PeladaCardComponent } from "@/components/pelada/PeladaCard";
 import { toast } from "sonner";
@@ -921,7 +922,6 @@ const Index = () => {
                 },
                 { onConflict: "user_id" },
             );
-            // @ts-ignore
             error = res.error;
         } else {
             const res = await supabase.from("pelada_bans").upsert(
@@ -934,7 +934,6 @@ const Index = () => {
                 },
                 { onConflict: "pelada_id,user_id" },
             );
-            // @ts-ignore
             error = res.error;
         }
 
@@ -970,11 +969,9 @@ const Index = () => {
         let error = null;
         if (applyToAll) {
             const res = await supabase.from("system_bans").delete().eq("user_id", targetUserId);
-            // @ts-ignore
             error = res.error;
         } else {
             const res = await supabase.from("pelada_bans").delete().eq("pelada_id", peladaId).eq("user_id", targetUserId);
-            // @ts-ignore
             error = res.error;
         }
 
@@ -1133,31 +1130,7 @@ const Index = () => {
                 }
             />
 
-            <main className="container mx-auto max-w-6xl px-4 py-6">
-                {/* Mobile nav */}
-                <div className="mb-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-                    {navItems
-                        .filter((item) => item.show)
-                        .map((item) => {
-                            const Icon = item.icon;
-                            const active = activeSection === item.key;
-                            return (
-                                <button
-                                    key={item.key}
-                                    className={[
-                                        "flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
-                                        active
-                                            ? "bg-primary text-primary-foreground"
-                                            : "border border-border bg-card text-muted-foreground hover:text-foreground",
-                                    ].join(" ")}
-                                    onClick={() => setActiveSection(item.key)}
-                                >
-                                    <Icon className="h-3.5 w-3.5" /> {item.label}
-                                </button>
-                            );
-                        })}
-                </div>
-
+            <main className="container mx-auto max-w-6xl px-4 py-6 pb-28 lg:pb-6">
                 <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
                     {/* Desktop sidebar */}
                     <aside className="hidden lg:block">
@@ -1192,6 +1165,7 @@ const Index = () => {
                     </aside>
 
                     <div>
+                        <div key={activeSection} className="animate-fade-in">
                         {activeSection === "resumo" && (
                             <div className="mb-6 rounded-xl border border-border/60 bg-card p-4 sm:p-6 animate-fade-in">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1865,8 +1839,15 @@ const Index = () => {
                                 </div>
                             </>
                         )}
+                        </div>
                     </div>
                 </div>
+
+                <MobileSectionNav
+                    items={navItems.filter((item) => item.show)}
+                    activeKey={activeSection}
+                    onChange={(key) => setActiveSection(key as DashboardSection)}
+                />
             </main>
         </div>
     );
