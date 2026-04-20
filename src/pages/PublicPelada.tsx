@@ -1,54 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { Shield, Trash2, ArrowLeft, Download, Link as LinkIcon, Check, X, ArrowUp, ArrowDown } from "lucide-react";
 import { formatDateBrasiliaLong, formatWeekdayDateTimeBrasilia, formatDateTimeBrasiliaWithSeconds } from "@/lib/datetime-br";
-import { buildOrderedPeladaEntries, sortPeladaMembers, type PeladaListEntry } from "@/lib/pelada-participants";
+import { buildOrderedPeladaEntries, type PeladaListEntry } from "@/lib/pelada-participants";
 import { getPeladaRules } from "@/lib/pelada-rules";
-import type { Json, Tables } from "@/integrations/supabase/types";
-
-type DrawTeam = { team: number; players: string[] };
-type PeladaRow = Omit<Tables<"peladas">, "draw_result"> & { draw_result: DrawTeam[] | null };
-type MemberRow = Tables<"pelada_members">;
-type GuestRow = Tables<"pelada_member_guests">;
-type JoinRequestRow = Tables<"pelada_join_requests">;
-type UserProfileRow = Tables<"user_profiles">;
-
-const parseDrawResult = (value: Json | null): DrawTeam[] | null => {
-  if (!Array.isArray(value)) return null;
-
-  const parsed = value
-    .map((item) => {
-      if (typeof item !== "object" || item === null || Array.isArray(item)) return null;
-
-      const rawTeam = (item as { team?: Json }).team;
-      const rawPlayers = (item as { players?: Json }).players;
-
-      if (typeof rawTeam !== "number" || !Array.isArray(rawPlayers)) return null;
-      if (!rawPlayers.every((player) => typeof player === "string")) return null;
-
-      return {
-        team: rawTeam,
-        players: rawPlayers,
-      };
-    })
-    .filter((team): team is DrawTeam => team !== null);
-
-  return parsed;
-};
-
-const getInitial = (name: string) => {
-  const trimmed = name.trim();
-  if (!trimmed) return "?";
-  return trimmed.charAt(0).toUpperCase();
-};
+import { PublicPeladaHeader } from "@/components/pelada/public/PublicPeladaHeader";
+import { PublicPeladaAccessCard } from "@/components/pelada/public/PublicPeladaAccessCard";
+import { PublicPeladaConfirmationCard } from "@/components/pelada/public/PublicPeladaConfirmationCard";
+import { PublicPeladaGuestsCard } from "@/components/pelada/public/PublicPeladaGuestsCard";
+import {
+  PublicPeladaPendingGuestsCard,
+  PublicPeladaSystemMemberCard,
+} from "@/components/pelada/public/PublicPeladaAdminCards";
+import { PublicPeladaParticipantsCard } from "@/components/pelada/public/PublicPeladaParticipantsCard";
+import { PublicPeladaDrawCard } from "@/components/pelada/public/PublicPeladaDrawCard";
+import { parseDrawResult } from "@/components/pelada/public/utils";
+import { PageState } from "@/components/layout/PageState";
+import type {
+  GuestRow,
+  JoinRequestRow,
+  MemberRow,
+  PeladaRow,
+  UserProfileRow,
+} from "@/components/pelada/public/types";
 
 const PublicPelada = () => {
   const { id } = useParams<{ id: string }>();
@@ -845,11 +821,6 @@ const PublicPelada = () => {
     fetchAll();
   };
 
-  const sortedMembers = useMemo(() => {
-    if (!pelada) return [];
-    return sortPeladaMembers(members, pelada.list_priority_mode);
-  }, [members, pelada]);
-
   const approvedGuests = useMemo(() => guests.filter((guest) => guest.approval_status === "approved"), [guests]);
   const pendingGuestRequests = useMemo(() => guests.filter((guest) => guest.approval_status === "pending"), [guests]);
 
@@ -869,6 +840,9 @@ const PublicPelada = () => {
   const memberCount = orderedListEntries.filter((entry) => !entry.isGoalkeeper && !entry.isWaiting).length;
   const gkCount = orderedListEntries.filter((entry) => entry.isGoalkeeper && !entry.isWaiting).length;
   const waitingEntries = useMemo(() => orderedListEntries.filter((entry) => entry.isWaiting), [orderedListEntries]);
+  const disableConfirmButton = !canConfirm || isBanned || (!isAdmin && !memberName.trim());
+  const canAddGuest = !!myMember && (canConfirm || isAdmin) && !isBanned;
+  const publicLink = `${window.location.origin}/pelada/${pelada?.id ?? id}`;
 
   const myWaitingPosition = useMemo(() => {
     if (!myMember?.is_waiting) return 0;
@@ -881,11 +855,7 @@ const PublicPelada = () => {
   if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
 
   if (notFound) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-muted-foreground">Pelada não encontrada</p>
-      </div>
-    );
+    return <PageState message="Pelada não encontrada" />;
   }
 
   if (!pelada) return null;
@@ -1033,437 +1003,112 @@ const PublicPelada = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="border-b border-border bg-card px-4 py-6">
-        <div className="container mx-auto flex max-w-md items-center justify-between gap-3">
-          <Link to="/">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div className="flex-1 text-center">
-            <h1 className="font-display text-2xl tracking-wider text-primary sm:text-3xl">{pelada.title}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">{pelada.location} • Horário: {pelada.time}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{formatGameDate()}</p>
-          </div>
-          {canManagePelada && (
-            <Link to={`/admin/${id}`}>
-              <Button variant="outline" size="icon" className="relative h-8 w-8 text-muted-foreground hover:text-primary">
-                <Shield className="h-5 w-5" />
-                {pendingRequestsCount > 0 && (
-                  <Badge className="absolute -right-2 -top-2 h-5 min-w-5 px-1 text-[10px]">{pendingRequestsCount}</Badge>
-                )}
-              </Button>
-            </Link>
-          )}
-        </div>
-      </div>
+      <PublicPeladaHeader
+        peladaId={pelada.id}
+        title={pelada.title}
+        location={pelada.location}
+        time={pelada.time}
+        gameDateLabel={formatGameDate()}
+        canManagePelada={canManagePelada}
+        pendingRequestsCount={pendingRequestsCount}
+      />
 
-      <main className="container mx-auto max-w-md space-y-5 px-4 py-5">
+      <main className="container mx-auto max-w-md space-y-5 px-4 py-6 sm:px-6 sm:py-7">
         {isBanned && (
-          <div className="rounded-lg border border-destructive/40 bg-card p-4">
+          <div className="rounded-xl border border-destructive/40 bg-card p-5">
             <p className="text-sm text-destructive">Você está banido desta pelada.</p>
           </div>
         )}
 
-        {!isBanned && !canAccessPelada && (
-          <div className="rounded-lg border border-primary/30 bg-card p-4">
-            <h2 className="mb-2 font-display text-lg text-foreground">ENTRADA NA PELADA</h2>
-            <p className="mb-3 text-sm text-muted-foreground">
-              Para confirmar presença, o admin precisa aprovar sua entrada nesta pelada.
-            </p>
+        <PublicPeladaAccessCard
+          isBanned={isBanned}
+          canAccessPelada={canAccessPelada}
+          profileHasName={profileHasName}
+          myJoinRequest={myJoinRequest}
+          onRequestAccess={handleRequestAccess}
+        />
 
-            {!profileHasName ? (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Antes de solicitar entrada, complete seu nome no perfil.</p>
-                <Link to="/">
-                  <Button className="w-full">Ir para meu perfil</Button>
-                </Link>
-              </div>
-            ) : myJoinRequest?.status === "pending" ? (
-              <Button className="w-full" disabled>
-                Solicitação enviada (aguardando)
-              </Button>
-            ) : myJoinRequest?.status === "rejected" ? (
-              <Button className="w-full" disabled>
-                Solicitação recusada pelo admin
-              </Button>
-            ) : (
-              <Button onClick={handleRequestAccess} className="w-full">
-                Solicitar entrada
-              </Button>
-            )}
-          </div>
-        )}
+        <PublicPeladaConfirmationCard
+          canConfirm={canConfirm}
+          formatOpenAtLabel={formatOpenAt()}
+          showProgressiveWarning={showProgressiveWarning}
+          progressiveWarningHours={rules.progressiveWarningHours}
+          isAdmin={isAdmin}
+          memberName={memberName}
+          onMemberNameChange={setMemberName}
+          isGoalkeeper={isGoalkeeper}
+          onGoalkeeperChange={setIsGoalkeeper}
+          onConfirm={handleConfirmMe}
+          onRemove={handleRemoveMe}
+          hasMember={!!myMember}
+          isBanned={isBanned}
+          disableConfirm={disableConfirmButton}
+          myMemberIsWaiting={!!myMember?.is_waiting}
+          myWaitingPosition={myWaitingPosition}
+        />
 
-        <div className="rounded-lg border border-primary/30 bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">CONFIRME SUA PRESENÇA</h2>
-
-          {!canConfirm && (
-            <p className="mb-3 rounded-md bg-muted p-2 text-xs text-muted-foreground">
-              Confirmações abertas em {formatOpenAt()}.
-            </p>
-          )}
-
-          {showProgressiveWarning && (
-            <p className="mb-3 rounded-md bg-accent/10 p-2 text-xs text-accent">
-              Faltam menos de {rules.progressiveWarningHours}h para abrir as confirmações.
-            </p>
-          )}
-
-          {isAdmin ? (
-            <p className="mb-3 rounded-md bg-accent/10 p-2 text-xs text-accent">
-              Você é admin desta pelada e já entra automaticamente na lista com o nome do seu perfil.
-            </p>
-          ) : (
-            <div className="mb-3">
-              <label className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
-                Seu nome <span className="text-destructive">*</span> obrigatório
-              </label>
-              <Input
-                placeholder="Digite seu nome"
-                value={memberName}
-                onChange={(e) => setMemberName(e.target.value)}
-                className="border-border bg-secondary"
-              />
-              {memberName.length === 0 && (
-                <p className="mt-1 text-xs text-destructive">Nome é obrigatório para confirmar presença</p>
-              )}
-            </div>
-          )}
-
-          <div className="mb-3 flex items-center gap-2">
-            <Checkbox id="goalkeeper" checked={isGoalkeeper} onCheckedChange={(checked) => setIsGoalkeeper(!!checked)} />
-            <label htmlFor="goalkeeper" className="flex cursor-pointer items-center gap-1 text-sm text-muted-foreground">
-              <Shield className="h-3.5 w-3.5" /> Sou goleiro
-            </label>
-          </div>
-
-          <div className="flex gap-2">
-            <Button 
-              onClick={handleConfirmMe} 
-              className="flex-1" 
-              disabled={!canConfirm || isBanned || (!isAdmin && !memberName.trim())}
-            >
-              {myMember ? "Atualizar minha confirmação" : "Confirmar presença"}
-            </Button>
-            {myMember && (
-              <Button variant="destructive" onClick={handleRemoveMe}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-
-          {myMember?.is_waiting && (
-            <p className="mt-3 rounded-md bg-muted p-2 text-xs text-muted-foreground">
-              Você está na lista de espera. Posição atual: {myWaitingPosition || "-"}. Quando surgir vaga, o primeiro da fila sobe automaticamente.
-            </p>
-          )}
-        </div>
-
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-display text-lg text-foreground">CONVIDADOS</h2>
-          <p className="mb-3 text-xs text-muted-foreground">
-            Só você pode adicionar/remover seus convidados. Cada convidado precisa de aprovação de admin para entrar na lista principal. Limite por membro: {rules.maxGuestsPerMember}.
-          </p>
-          <div className="mb-3 flex gap-2">
-            <Input
-              placeholder="Nome do convidado"
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddGuest()}
-              className="border-border bg-secondary"
-              disabled={!myMember}
-            />
-            <Button onClick={handleAddGuest} disabled={!myMember || (!canConfirm && !isAdmin) || isBanned}>
-              Adicionar
-            </Button>
-          </div>
-          <div className="mb-3 flex items-center gap-2">
-            <Checkbox id="guest-goalkeeper" checked={isGuestGoalkeeper} onCheckedChange={(checked) => setIsGuestGoalkeeper(!!checked)} />
-            <label htmlFor="guest-goalkeeper" className="flex cursor-pointer items-center gap-1 text-sm text-muted-foreground">
-              <Shield className="h-3.5 w-3.5" /> Convidado goleiro
-            </label>
-          </div>
-          {!myMember && <p className="text-xs text-muted-foreground">Confirme sua presença para liberar convidados.</p>}
-
-          {myMember && (
-            <div className="mt-2 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Meus convidados</p>
-              {myGuests.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Você ainda não adicionou convidados.</p>
-              ) : (
-                myGuests.map((guest) => {
-                  const statusLabel =
-                    guest.approval_status === "approved"
-                      ? "aprovado"
-                      : guest.approval_status === "rejected"
-                        ? "recusado"
-                        : "aguardando aprovação";
-
-                  return (
-                    <div key={guest.id} className="flex items-center justify-between rounded-md border border-border bg-secondary/40 px-2 py-1.5">
-                      <div>
-                        <p className="text-sm text-foreground">{guest.guest_name}</p>
-                        <p className="text-[11px] text-muted-foreground">Status: {statusLabel}</p>
-                      </div>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRemoveGuest(guest.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
+        <PublicPeladaGuestsCard
+          maxGuestsPerMember={rules.maxGuestsPerMember}
+          guestName={guestName}
+          onGuestNameChange={setGuestName}
+          onGuestKeyDown={(key) => key === "Enter" && handleAddGuest()}
+          onAddGuest={handleAddGuest}
+          isGuestGoalkeeper={isGuestGoalkeeper}
+          onGuestGoalkeeperChange={setIsGuestGoalkeeper}
+          hasMember={!!myMember}
+          canAddGuest={canAddGuest}
+          myGuests={myGuests}
+          onRemoveGuest={handleRemoveGuest}
+        />
 
         {canManagePelada && (
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h2 className="mb-3 font-display text-lg text-foreground">ADICIONAR MEMBRO DO SISTEMA</h2>
-            <p className="mb-3 text-xs text-muted-foreground">Use essa busca para confirmar alguém diretamente na lista sem depender da solicitação de entrada.</p>
-            <Input
-              placeholder="Buscar por nome do perfil"
-              value={systemMemberSearch}
-              onChange={(e) => setSystemMemberSearch(e.target.value)}
-              className="mb-3 border-border bg-secondary"
-            />
-
-            {systemMemberSearch.trim().length < 2 ? (
-              <p className="text-xs text-muted-foreground">Digite ao menos 2 letras para buscar membros do sistema.</p>
-            ) : isSearchingSystemMembers ? (
-              <p className="text-xs text-muted-foreground">Buscando membros do sistema...</p>
-            ) : systemMemberResults.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Nenhum membro disponível para adicionar.</p>
-            ) : (
-              <div className="space-y-2">
-                {systemMemberResults.map((profile) => (
-                  <div key={profile.user_id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-secondary/30 px-2 py-1.5">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-foreground">{profile.display_name || "Usuário sem nome"}</p>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => addSystemMemberToPelada(profile)}
-                      disabled={addingSystemMemberUserId === profile.user_id}
-                    >
-                      {addingSystemMemberUserId === profile.user_id ? "Adicionando..." : "Adicionar"}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <PublicPeladaSystemMemberCard
+            systemMemberSearch={systemMemberSearch}
+            onSystemMemberSearchChange={setSystemMemberSearch}
+            isSearchingSystemMembers={isSearchingSystemMembers}
+            systemMemberResults={systemMemberResults}
+            addingSystemMemberUserId={addingSystemMemberUserId}
+            onAddSystemMember={addSystemMemberToPelada}
+          />
         )}
 
         {canManagePelada && (
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h2 className="mb-2 font-display text-lg text-foreground">APROVAR CONVIDADOS</h2>
-            <p className="mb-3 text-xs text-muted-foreground">Essa área aparece só para admins. Os convidados entram na lista apenas depois da aprovação.</p>
-
-            <div className="space-y-2">
-              {pendingGuestRequests.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Sem convidados pendentes de aprovação.</p>
-              ) : (
-                pendingGuestRequests.map((guest) => {
-                  const hostMember = members.find((member) => member.id === guest.pelada_member_id);
-                  const hostName = hostMember ? getMemberDisplayName(hostMember) : "responsável removido";
-
-                  return (
-                    <div key={guest.id} className="rounded-md border border-border bg-secondary/40 p-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <p className="text-sm text-foreground">{guest.guest_name}</p>
-                          <p className="text-xs text-muted-foreground">Responsável: {hostName}</p>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button size="sm" onClick={() => reviewGuestRequest(guest.id, "approved")} className="gap-1">
-                            <Check className="h-3.5 w-3.5" /> Aprovar
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={() => reviewGuestRequest(guest.id, "rejected")} className="gap-1">
-                            <X className="h-3.5 w-3.5" /> Recusar
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+          <PublicPeladaPendingGuestsCard
+            pendingGuestRequests={pendingGuestRequests}
+            members={members}
+            getMemberDisplayName={getMemberDisplayName}
+            onReviewGuest={reviewGuestRequest}
+          />
         )}
 
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-3 font-display text-lg text-foreground">LISTA</h2>
-          <div className="mb-2 flex gap-2 text-xs">
-            <span className="rounded-full bg-primary/20 px-2 py-0.5 text-primary">Jogadores: {memberCount}/{memberCapacity}</span>
-            <span className="rounded-full bg-accent/20 px-2 py-0.5 text-accent">Goleiros: {gkCount}/{gkCapacity}</span>
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-foreground">Convidados aprovados: {approvedGuests.length}</span>
-          </div>
-          <p className="mb-2 text-xs text-muted-foreground">
-            Membros e convidados entram na mesma lista. Ordem dos membros: {pelada.list_priority_mode === "member_priority" ? "prioridade" : "confirmação"} | convidados: {pelada.guest_priority_mode === "guest_added_order" ? "ordem de adição" : "junto do responsável"}
-          </p>
-          {waitingEntries.length > 0 && (
-            <p className="mb-2 text-xs text-muted-foreground">Lista de espera atual: {waitingEntries.length}</p>
-          )}
-
-          <div className="mb-2 flex gap-2">
-            {isAdmin && (
-              <Button onClick={copyFormattedList} className="flex-1 gap-2 text-sm">
-                <Download className="h-4 w-4" /> Copiar lista
-              </Button>
-            )}
-          </div>
-
-          <div className="rounded-md border border-border bg-secondary/30 p-2">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Participantes</p>
-            <div className="space-y-2">
-              {orderedListEntries.map((entry) => {
-                if (entry.kind === "member") {
-                  const member = entry.member;
-                  const canRemoveMember = canManagePelada && member.user_id !== user?.id;
-                  const moveEntryId = `${entry.kind}-${entry.id}`;
-                  const isMovingThisEntry = movingEntryId === moveEntryId;
-
-                  return (
-                    <div key={member.id} className="rounded-md border border-border bg-secondary/50 p-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-7 w-7">
-                            <AvatarImage src={member.member_avatar_url || undefined} alt={getMemberDisplayName(member)} />
-                            <AvatarFallback className="text-[11px] font-semibold">{getInitial(getMemberDisplayName(member))}</AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm text-foreground">
-                            {getMemberDisplayName(member)}
-                            {entry.isGoalkeeper ? " (goleiro)" : ""}
-                            {entry.isWaiting ? " (espera)" : ""}
-                            {pelada.list_priority_mode === "member_priority" ? ` (prio ${member.priority_score})` : ""}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {entry.isWaiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
-                          {canManagePelada && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => handleMoveEntry(entry, !entry.isWaiting)}
-                              disabled={isMovingThisEntry}
-                              title={entry.isWaiting ? "Subir para lista principal" : "Mover para lista de espera"}
-                            >
-                              {entry.isWaiting ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
-                            </Button>
-                          )}
-                          {canRemoveMember && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-destructive hover:text-destructive"
-                              onClick={() => handleAdminRemoveMember(member)}
-                              disabled={removingMemberId === member.id}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-
-                const guest = entry.guest;
-                const canDelete = !!myMember && guest.pelada_member_id === myMember.id;
-                const moveEntryId = `${entry.kind}-${entry.id}`;
-                const isMovingThisEntry = movingEntryId === moveEntryId;
-                const canMoveGuest = canManagePelada;
-
-                return (
-                  <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-[10px] font-semibold">{getInitial(guest.guest_name)}</AvatarFallback>
-                        </Avatar>
-                        <span className="text-foreground">
-                          {guest.guest_name}
-                          {entry.isWaiting ? " (espera)" : ""}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {entry.isWaiting ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">espera</span> : null}
-                        {canManagePelada && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => handleMoveEntry(entry, !entry.isWaiting)}
-                            disabled={!canMoveGuest || isMovingThisEntry}
-                            title={entry.isWaiting ? "Subir para lista principal" : "Mover para lista de espera"}
-                          >
-                            {entry.isWaiting ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
-                          </Button>
-                        )}
-                        {canDelete && (
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleRemoveGuest(guest.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    <p className="mt-1 text-muted-foreground">Responsável: {entry.hostMember ? getMemberDisplayName(entry.hostMember) : "participante removido"}</p>
-                  </div>
-                );
-              })}
-              {orderedListEntries.length === 0 && (
-                <p className="py-3 text-center text-sm text-muted-foreground">Sem participantes confirmados</p>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-3 border-t pt-3 text-xs text-muted-foreground flex items-center justify-between gap-2">
-            <div className="break-words">Link público: <a href={`${window.location.origin}/pelada/${pelada.id}`} className="text-primary underline">{`${window.location.origin}/pelada/${pelada.id}`}</a></div>
-            <div>
-              <Button variant="secondary" size="sm" onClick={() => {
-                const url = `${window.location.origin}/pelada/${pelada.id}`;
-                navigator.clipboard.writeText(url).then(() => toast.success('Link copiado!')).catch(() => toast.error('Falha ao copiar link'));
-              }}>
-                <LinkIcon className="h-4 w-4" /> Copiar link
-              </Button>
-            </div>
-          </div>
-
-          {orderedListEntries.length === 0 && <p className="mt-3 py-3 text-center text-sm text-muted-foreground">Ninguém confirmou ainda</p>}
-        </div>
+        <PublicPeladaParticipantsCard
+          pelada={pelada}
+          memberCount={memberCount}
+          memberCapacity={memberCapacity}
+          gkCount={gkCount}
+          gkCapacity={gkCapacity}
+          approvedGuestsCount={approvedGuests.length}
+          waitingEntriesCount={waitingEntries.length}
+          orderedListEntries={orderedListEntries}
+          isAdmin={isAdmin}
+          canManagePelada={canManagePelada}
+          currentUserId={user?.id}
+          currentUserMemberId={myMember?.id}
+          movingEntryId={movingEntryId}
+          removingMemberId={removingMemberId}
+          publicLink={publicLink}
+          onCopyFormattedList={copyFormattedList}
+          onCopyPublicLink={() => {
+            navigator.clipboard.writeText(publicLink).then(() => toast.success("Link copiado!")).catch(() => toast.error("Falha ao copiar link"));
+          }}
+          onMoveEntry={handleMoveEntry}
+          onAdminRemoveMember={handleAdminRemoveMember}
+          onRemoveGuest={handleRemoveGuest}
+          getMemberDisplayName={getMemberDisplayName}
+        />
 
         {pelada.draw_done_at && (
-          <div className="rounded-lg border border-accent/30 bg-card p-4">
-            <h2 className="mb-2 font-display text-lg text-accent">SORTEIO OFICIAL</h2>
-            <p className="mb-3 text-xs text-muted-foreground">Esse sorteio foi realizado apenas uma vez.</p>
-
-            {isAdmin && (
-              <div className="mb-3">
-                <Button onClick={exportDraw} className="gap-2">
-                  <Download className="h-4 w-4" /> Copiar sorteio
-                </Button>
-              </div>
-            )}
-
-            {Array.isArray(pelada.draw_result) && pelada.draw_result.length > 0 ? (
-              <div className="space-y-3">
-                {pelada.draw_result.map((team) => (
-                  <div key={team.team} className="rounded-md bg-secondary p-3">
-                    <h3 className="mb-2 text-sm font-semibold text-foreground">Time {team.team}</h3>
-                    <ul className="space-y-1 text-sm text-muted-foreground">
-                      {team.players.map((playerName, index) => (
-                        <li key={`${team.team}-${index}`}>{playerName}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">O administrador finalizou o sorteio.</p>
-            )}
-          </div>
+          <PublicPeladaDrawCard isAdmin={isAdmin} drawResult={pelada.draw_result} onExportDraw={exportDraw} />
         )}
       </main>
     </div>
