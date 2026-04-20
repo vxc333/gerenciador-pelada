@@ -678,8 +678,8 @@ const PublicPelada = () => {
 
       toast.success(
         toWaiting
-          ? "Convidado e responsável movidos para a lista de espera"
-          : "Convidado e responsável movidos para a lista principal",
+          ? "Responsável do convidado movido para a lista de espera"
+          : "Responsável do convidado movido para a lista principal",
       );
       fetchAll();
       return;
@@ -1374,6 +1374,7 @@ const PublicPelada = () => {
                 const canDelete = !!myMember && guest.pelada_member_id === myMember.id;
                 const moveEntryId = `${entry.kind}-${entry.id}`;
                 const isMovingThisEntry = movingEntryId === moveEntryId;
+                const canMoveGuest = canManagePelada;
 
                 return (
                   <div key={guest.id} className="rounded-md border border-dashed border-border bg-muted/40 p-2 text-xs">
@@ -1395,7 +1396,7 @@ const PublicPelada = () => {
                             size="icon"
                             className="h-6 w-6"
                             onClick={() => handleMoveEntry(entry, !entry.isWaiting)}
-                            disabled={isMovingThisEntry}
+                            disabled={!canMoveGuest || isMovingThisEntry}
                             title={entry.isWaiting ? "Subir para lista principal" : "Mover para lista de espera"}
                           >
                             {entry.isWaiting ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
