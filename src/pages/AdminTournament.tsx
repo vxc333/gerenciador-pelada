@@ -205,12 +205,9 @@ const AdminTournament = () => {
     const hasSystemAdminRole = !!superAdmin;
     setIsSystemAdmin(hasSystemAdminRole);
 
-    const [{ data: created }, { data: adminRows }, { data: ownedTeams }, { data: activeLinks }, { data: acceptedTeamPlayers }] = await Promise.all([
+    const [{ data: created }, { data: adminRows }] = await Promise.all([
       supabase.from("tournaments").select("*").eq("created_by", user.id).order("created_at", { ascending: false }),
       supabase.from("tournament_admins").select("*").eq("user_id", user.id),
-      supabase.from("tournament_teams").select("tournament_id").eq("owner_user_id", user.id),
-      supabase.from("tournament_player_team_links").select("tournament_id").eq("user_id", user.id).eq("status", "ATIVO"),
-      supabase.from("tournament_team_players").select("tournament_id").eq("user_id", user.id).eq("invite_status", "ACEITO"),
     ]);
 
     const adminTournamentIds = new Set<string>([
@@ -218,28 +215,21 @@ const AdminTournament = () => {
       ...((adminRows || []).map((row) => row.tournament_id)),
     ]);
 
-    const participantTournamentIds = new Set<string>([
-      ...Array.from(adminTournamentIds),
-      ...((ownedTeams || []).map((row) => row.tournament_id)),
-      ...((activeLinks || []).map((row) => row.tournament_id)),
-      ...((acceptedTeamPlayers || []).map((row) => row.tournament_id)),
-    ]);
-
     let participantTournaments: TournamentRow[] = [];
-    const ids = Array.from(participantTournamentIds);
+    const ids = Array.from(adminTournamentIds);
     if (ids.length > 0) {
       const { data } = await supabase.from("tournaments").select("*").in("id", ids);
       participantTournaments = data || [];
     }
 
-    const merged = [...(created || []), ...participantTournaments];
+    const merged = [...participantTournaments];
     const unique = Array.from(new Map(merged.map((t) => [t.id, t])).values()).sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
     const memberMap: Record<string, boolean> = {};
     unique.forEach((tournament) => {
-      memberMap[tournament.id] = true;
+      memberMap[tournament.id] = hasSystemAdminRole || tournament.created_by === user.id || adminTournamentIds.has(tournament.id);
     });
 
     const adminMap: Record<string, boolean> = {};
@@ -1102,6 +1092,10 @@ const AdminTournament = () => {
     }));
   }, [profilesByUser, selectedLinks]);
 
+  const hasAnyTournamentAdminAccess = useMemo(() => {
+    return Object.values(adminByTournament).some(Boolean);
+  }, [adminByTournament]);
+
   if (loading || !profileChecked) return null;
   if (!user) return <Navigate to="/auth" replace />;
   if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
@@ -1110,12 +1104,12 @@ const AdminTournament = () => {
     return <PageState message="Carregando módulo de torneios..." />;
   }
 
-  if (!isSystemAdmin && tournaments.length === 0) {
+  if (!isSystemAdmin && !hasAnyTournamentAdminAccess) {
     return (
       <PageState
         title="Sem acesso"
-        message="Você não possui privilégios de administração de torneio."
-        details="Solicite inclusão em tournament_admins ou acesso de sistema."
+        message="Este módulo é exclusivo para admins de torneio."
+        details="Peça para um admin do sistema criar o torneio e te incluir como admin em tournament_admins."
       />
     );
   }
