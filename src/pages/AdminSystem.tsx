@@ -200,16 +200,7 @@ const AdminSystem = () => {
       navItems={[
         { label: "Dashboard", to: "/", icon: LayoutDashboard },
         { label: "Sistema", to: "/admin", icon: Shield },
-        { label: "Torneios", to: "/admin/torneios", icon: Trophy },
       ]}
-      actions={
-        <Link to="/admin/torneios">
-          <Button variant="outline" size="sm" className="gap-2">
-            <Trophy className="h-4 w-4" />
-            Torneios
-          </Button>
-        </Link>
-      }
     >
       <PageContent className="max-w-2xl space-y-5">
         <SystemAccessSection
