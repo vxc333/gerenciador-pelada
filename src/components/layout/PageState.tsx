@@ -22,7 +22,7 @@ export const PageState = ({ title, message, details, action, className }: PageSt
   return (
     <CenteredPage>
       <CenteredCard className={cn("text-center", className)}>
-        {title ? <h1 className="font-display text-2xl tracking-wider text-primary">{title}</h1> : null}
+        {title ? <h1 className="text-xl font-semibold text-foreground">{title}</h1> : null}
         <p className="mt-3 text-sm text-muted-foreground">{message}</p>
         {details ? <p className="mt-1 text-xs text-muted-foreground">{details}</p> : null}
         {action ? <div className="mt-4">{action}</div> : null}

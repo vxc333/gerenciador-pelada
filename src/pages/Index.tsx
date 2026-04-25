@@ -45,7 +45,7 @@ interface PeladaCard extends PeladaRow {
     pending_requests_count?: number;
 }
 
-type DashboardSection = "resumo" | "historico" | "admin" | "disponiveis" | "membros";
+type DashboardSection = "resumo" | "historico" | "admin" | "disponiveis" | "membros" | "torneios";
 
 interface UserProfile {
     display_name: string;
@@ -1090,13 +1090,30 @@ const Index = () => {
     const profileRequired = profileLoaded && !profileName.trim();
     const profileBlocked = !hasProfileName || profileRequired;
 
-    const navItems: Array<{ key: DashboardSection; label: string; icon: typeof LayoutDashboard; show: boolean }> = [
+    const navItems: Array<{
+        key: DashboardSection;
+        label: string;
+        icon: typeof LayoutDashboard;
+        show: boolean;
+        to?: string;
+    }> = [
         { key: "resumo", label: "Painel", icon: LayoutDashboard, show: true },
         { key: "historico", label: "Histórico", icon: History, show: true },
         { key: "membros", label: "Membros", icon: Users, show: isSuperAdmin || managedPeladas.length > 0 },
         { key: "admin", label: "Minhas peladas", icon: FolderKanban, show: myPeladas.length > 0 || isSuperAdmin },
         { key: "disponiveis", label: "Peladas disponíveis", icon: Users, show: true },
+        { key: "torneios", label: "Torneios", icon: Trophy, show: isSuperAdmin, to: "/admin/torneios" },
     ];
+
+    const handleSectionChange = (key: DashboardSection) => {
+        const selected = navItems.find((item) => item.key === key);
+        if (selected?.to) {
+            navigate(selected.to);
+            return;
+        }
+
+        setActiveSection(key);
+    };
 
     const renderCard = (
         p: PeladaCard,
@@ -1175,7 +1192,7 @@ const Index = () => {
                                                         ? "bg-primary/15 text-primary"
                                                         : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                                                 ].join(" ")}
-                                                onClick={() => setActiveSection(item.key)}
+                                                onClick={() => handleSectionChange(item.key)}
                                             >
                                                 <Icon className="h-4 w-4 shrink-0" />
                                                 {item.label}
@@ -1824,7 +1841,7 @@ const Index = () => {
                         )}
 
                         {(activeSection === "disponiveis" || activeSection === "resumo") && (
-                            <>
+                            <div className={activeSection === "resumo" ? "hidden lg:block" : undefined}>
                                 <div className="mb-3 mt-8">
                                     <h2 className="font-display text-xl text-foreground">PELADAS DISPONIVEIS</h2>
                                     <p className="text-sm text-muted-foreground">
@@ -1848,18 +1865,18 @@ const Index = () => {
                                         </>
                                     )}
                                 </div>
-                            </>
+                            </div>
                         )}
 
                         {activeSection === "resumo" && myPeladas.length > 0 && (
-                            <>
+                            <div className="hidden lg:block">
                                 <div className="mb-3 mt-8">
                                     <h2 className="font-display text-xl text-foreground">MINHAS PELADAS (ADMIN)</h2>
                                 </div>
                                 <div className="space-y-3">
                                     {myPeladas.slice(0, 3).map((pelada) => renderCard(pelada, { showAdminActions: true }))}
                                 </div>
-                            </>
+                            </div>
                         )}
                         </div>
                     </div>
@@ -1868,7 +1885,7 @@ const Index = () => {
                 <MobileSectionNav
                     items={navItems.filter((item) => item.show)}
                     activeKey={activeSection}
-                    onChange={(key) => setActiveSection(key as DashboardSection)}
+                    onChange={(key) => handleSectionChange(key as DashboardSection)}
                 />
             </main>
         </div>

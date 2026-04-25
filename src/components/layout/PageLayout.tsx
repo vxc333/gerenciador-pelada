@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { SaaSCard } from "@/components/ui/saas-card";
 
 interface CenteredPageProps {
   children: ReactNode;
@@ -28,7 +29,7 @@ export const CenteredPage = ({ children, className }: CenteredPageProps) => {
 };
 
 export const CenteredCard = ({ children, className }: CenteredCardProps) => {
-  return <div className={cn("w-full max-w-sm rounded-xl border border-border/50 bg-card/95 p-6 backdrop-blur-sm", className)}>{children}</div>;
+  return <div className={cn("w-full max-w-sm rounded-lg border border-border/80 bg-card p-6 shadow-[0_1px_0_hsl(var(--border))]", className)}>{children}</div>;
 };
 
 export const PageContent = ({ children, className }: PageContentProps) => {
@@ -37,10 +38,8 @@ export const PageContent = ({ children, className }: PageContentProps) => {
 
 export const PageSectionCard = ({ title, description, children, className }: PageSectionCardProps) => {
   return (
-    <section className={cn("rounded-xl border border-border/50 bg-card p-5 transition-colors hover:border-border", className)}>
-      <h2 className="mb-1 font-display text-2xl tracking-wide text-foreground">{title}</h2>
-      {description ? <p className="mb-4 text-xs text-muted-foreground">{description}</p> : null}
+    <SaaSCard title={title} description={description} className={className}>
       {children}
-    </section>
+    </SaaSCard>
   );
 };
