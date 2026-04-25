@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowRightLeft, Award, BarChart3, CalendarDays, CheckCircle2, ImagePlus, LayoutDashboard, PlayCircle, Save, Shield, Swords, Trophy, Upload, Users } from "lucide-react";
+import { ArrowRightLeft, Award, BarChart3, CalendarDays, CheckCircle2, ImagePlus, LayoutDashboard, PlayCircle, Plus, Save, Shield, Swords, Trophy, Upload, Users } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Tables } from "@/integrations/supabase/types";
@@ -163,6 +163,7 @@ const AdminTournament = () => {
 
   const [editorState, setEditorState] = useState<MatchEditorState | null>(null);
   const [savingResult, setSavingResult] = useState(false);
+  const [createTournamentOpen, setCreateTournamentOpen] = useState(false);
   const [mainTab, setMainTab] = useState<TournamentMainTab>("lista");
   const [selectedTournamentId, setSelectedTournamentId] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("todos");
@@ -205,31 +206,24 @@ const AdminTournament = () => {
     const hasSystemAdminRole = !!superAdmin;
     setIsSystemAdmin(hasSystemAdminRole);
 
-    const [{ data: created }, { data: adminRows }] = await Promise.all([
-      supabase.from("tournaments").select("*").eq("created_by", user.id).order("created_at", { ascending: false }),
-      supabase.from("tournament_admins").select("*").eq("user_id", user.id),
+    const [{ data: allTournaments }, { data: adminRows }] = await Promise.all([
+      supabase.from("tournaments").select("*").order("created_at", { ascending: false }),
+      supabase.from("tournament_admins").select("tournament_id").eq("user_id", user.id),
     ]);
 
     const adminTournamentIds = new Set<string>([
-      ...(created || []).map((t) => t.id),
-      ...((adminRows || []).map((row) => row.tournament_id)),
+      ...(allTournaments || []).filter((t) => t.created_by === user.id).map((t) => t.id),
+      ...(adminRows || []).map((row) => row.tournament_id),
     ]);
 
-    let participantTournaments: TournamentRow[] = [];
-    const ids = Array.from(adminTournamentIds);
-    if (ids.length > 0) {
-      const { data } = await supabase.from("tournaments").select("*").in("id", ids);
-      participantTournaments = data || [];
-    }
-
-    const merged = [...participantTournaments];
+    const merged = [...((allTournaments || []) as TournamentRow[])];
     const unique = Array.from(new Map(merged.map((t) => [t.id, t])).values()).sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
     const memberMap: Record<string, boolean> = {};
     unique.forEach((tournament) => {
-      memberMap[tournament.id] = hasSystemAdminRole || tournament.created_by === user.id || adminTournamentIds.has(tournament.id);
+      memberMap[tournament.id] = true;
     });
 
     const adminMap: Record<string, boolean> = {};
@@ -452,6 +446,7 @@ const AdminTournament = () => {
 
     toast.success("Torneio criado com sucesso");
     setForm(defaultForm);
+    setCreateTournamentOpen(false);
     await loadData();
   };
 
@@ -1092,10 +1087,6 @@ const AdminTournament = () => {
     }));
   }, [profilesByUser, selectedLinks]);
 
-  const hasAnyTournamentAdminAccess = useMemo(() => {
-    return Object.values(adminByTournament).some(Boolean);
-  }, [adminByTournament]);
-
   if (loading || !profileChecked) return null;
   if (!user) return <Navigate to="/auth" replace />;
   if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
@@ -1104,21 +1095,28 @@ const AdminTournament = () => {
     return <PageState message="Carregando módulo de torneios..." />;
   }
 
-  if (!isSystemAdmin && !hasAnyTournamentAdminAccess) {
-    return (
-      <PageState
-        title="Sem acesso"
-        message="Este módulo é exclusivo para admins de torneio."
-        details="Peça para um admin do sistema criar o torneio e te incluir como admin em tournament_admins."
-      />
-    );
-  }
-
   return (
     <>
+      <Dialog open={createTournamentOpen} onOpenChange={setCreateTournamentOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Criar novo torneio</DialogTitle>
+            <DialogDescription>
+              Defina regras e parâmetros iniciais. Você poderá ajustar detalhes depois.
+            </DialogDescription>
+          </DialogHeader>
+          <TournamentCreateFormCard
+            form={form}
+            creating={creating}
+            setForm={setForm}
+            onCreate={createTournament}
+          />
+        </DialogContent>
+      </Dialog>
+
       <AdminShell
       title="PAINEL DE TORNEIOS"
-      subtitle="Criação, gestão de estados, tabela e resultados"
+      subtitle="Inscrição de membros, gestão de estados, tabela e resultados"
       backTo="/admin"
       navItems={[
         { label: "Dashboard", to: "/", icon: LayoutDashboard },
@@ -1126,24 +1124,23 @@ const AdminTournament = () => {
         { label: "Torneios", to: "/admin/torneios", icon: Trophy },
       ]}
       actions={
-        <Link to="/admin">
-          <Button variant="outline" size="sm" className="gap-2">
-            <Shield className="h-4 w-4" />
-            Sistema
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          {isSystemAdmin && (
+            <Button size="sm" className="gap-2" onClick={() => setCreateTournamentOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Novo torneio
+            </Button>
+          )}
+          <Link to="/admin">
+            <Button variant="outline" size="sm" className="gap-2">
+              <Shield className="h-4 w-4" />
+              Sistema
+            </Button>
+          </Link>
+        </div>
       }
       >
         <PageContent className="max-w-6xl space-y-6">
-        {isSystemAdmin && (
-          <TournamentCreateFormCard
-            form={form}
-            creating={creating}
-            setForm={setForm}
-            onCreate={createTournament}
-          />
-        )}
-
         <PageSectionCard
           title="TORNEIOS"
           description="Lista, detalhes, times, jogos, classificação, transferências e premiação"
