@@ -52,6 +52,21 @@ interface UserProfile {
     avatar_url: string | null;
 }
 
+interface DashboardCachePayload {
+    savedAt: string;
+    myPeladas: PeladaCard[];
+    availablePeladas: PeladaCard[];
+    managedPeladas: PeladaCard[];
+    notificationEvents: NotificationEvent[];
+    pendingGlobalCount: number;
+    membersData: Tables<"pelada_members">[];
+    profilesByUserId: Record<string, Tables<"user_profiles">>;
+    bansData: Tables<"pelada_bans">[];
+    systemBansData: Tables<"system_bans">[];
+    joinRequests: Tables<"pelada_join_requests">[];
+    systemAccepted: Array<{ user_id: string; display_name: string; avatar_url?: string | null; lastAcceptedAt: string; count: number }>;
+}
+
 type NotificationEvent = {
     id: string;
     type: "request" | "approval" | "ban" | "draw";
@@ -75,6 +90,33 @@ const getDefaultOpenAt = (date: string) => {
 };
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+const getDashboardCacheKey = (userId: string) => `pelada.dashboard.cache.v1.${userId}`;
+
+const readDashboardCache = (userId: string): DashboardCachePayload | null => {
+    try {
+        const raw = window.localStorage.getItem(getDashboardCacheKey(userId));
+        if (!raw) return null;
+        return JSON.parse(raw) as DashboardCachePayload;
+    } catch (error) {
+        console.error("Erro lendo cache local do dashboard:", error);
+        return null;
+    }
+};
+
+const writeDashboardCache = (userId: string, payload: Omit<DashboardCachePayload, "savedAt">) => {
+    try {
+        window.localStorage.setItem(
+            getDashboardCacheKey(userId),
+            JSON.stringify({
+                ...payload,
+                savedAt: new Date().toISOString(),
+            }),
+        );
+    } catch (error) {
+        console.error("Erro salvando cache local do dashboard:", error);
+    }
+};
 
 const parsePeladaStartLocal = (date?: string, time?: string): Date | null => {
     if (!date) return null;
@@ -233,7 +275,23 @@ const Index = () => {
         ]);
 
         if (myError || allError) {
-            toast.error("Erro ao carregar peladas");
+            const cached = readDashboardCache(user.id);
+            if (cached) {
+                setMyPeladas(cached.myPeladas || []);
+                setAvailablePeladas(cached.availablePeladas || []);
+                setManagedPeladas(cached.managedPeladas || []);
+                setNotificationEvents(cached.notificationEvents || []);
+                setPendingGlobalCount(cached.pendingGlobalCount || 0);
+                setMembersData(cached.membersData || []);
+                setProfilesByUserId(cached.profilesByUserId || {});
+                setBansData(cached.bansData || []);
+                setSystemBansData(cached.systemBansData || []);
+                setJoinRequests(cached.joinRequests || []);
+                setSystemAccepted(cached.systemAccepted || []);
+                toast.warning("Sem internet. Exibindo dados salvos no aparelho.");
+            } else {
+                toast.error("Erro ao carregar peladas");
+            }
             setFetching(false);
             return;
         }
@@ -300,7 +358,9 @@ const Index = () => {
             return start.getTime() + TWO_HOURS_MS > now.getTime();
         });
 
-        const myEnriched = (await enrichWithCounts(activeMyPeladas)).map((pelada) => ({
+        const mySource = activeMyPeladas.length > 0 ? activeMyPeladas : myData || [];
+
+        const myEnriched = (await enrichWithCounts(mySource)).map((pelada) => ({
             ...pelada,
             pending_requests_count: pendingByPelada.get(pelada.id) || 0,
         }));
@@ -325,13 +385,13 @@ const Index = () => {
         }
 
         // Filter available peladas: exclude those already happened (start + 2h <= now)
-        const availableBase = (allData || [])
-            .filter((pelada) => pelada.user_id !== user.id)
-            .filter((pelada) => {
+        const availableCandidates = (allData || []).filter((pelada) => pelada.user_id !== user.id);
+        const upcomingAvailable = availableCandidates.filter((pelada) => {
                 const start = parsePeladaStartLocal(pelada.date, (pelada as PeladaRow).time);
                 if (!start) return true; // keep if cannot parse date/time
                 return start.getTime() + TWO_HOURS_MS > now.getTime();
             });
+        const availableBase = upcomingAvailable.length > 0 ? upcomingAvailable : availableCandidates;
         const availableEnriched = await enrichWithCounts(availableBase);
 
         const decoratedAvailable = availableEnriched.map((pelada) => {
@@ -440,11 +500,23 @@ const Index = () => {
         setNotificationEvents(mergedEvents);
         setPendingGlobalCount(Array.from(pendingByPelada.values()).reduce((acc, value) => acc + value, 0));
 
+        let membersForCache: Tables<"pelada_members">[] = [];
+        let profilesForCache: Record<string, Tables<"user_profiles">> = {};
+        let systemBansForCache: Tables<"system_bans">[] = [];
+        let systemAcceptedForCache: Array<{
+            user_id: string;
+            display_name: string;
+            avatar_url?: string | null;
+            lastAcceptedAt: string;
+            count: number;
+        }> = [];
+
         // Fetch members and profiles for managed peladas
         if (managedIds.length > 0) {
             const { data: members } = await supabase.from("pelada_members").select("*").in("pelada_id", managedIds);
 
             setMembersData(members || []);
+            membersForCache = (members || []) as Tables<"pelada_members">[];
 
             // Fetch profiles for members
             const memberUserIds = new Set((members || []).map((m) => m.user_id));
@@ -456,11 +528,13 @@ const Index = () => {
                     profileMap[profile.user_id] = profile;
                 });
                 setProfilesByUserId(profileMap);
+                profilesForCache = profileMap;
 
                 // Fetch system-wide bans for these members
                 try {
                     const { data: systemBans } = await supabase.from("system_bans").select("*").in("user_id", Array.from(memberUserIds));
                     setSystemBansData(systemBans || []);
+                    systemBansForCache = (systemBans || []) as Tables<"system_bans">[];
 
                     const initialApplyAll: Record<string, boolean> = {};
                     const initialDays: Record<string, number> = {};
@@ -482,10 +556,14 @@ const Index = () => {
                 } catch (e) {
                     // ignore
                 }
+            } else {
+                setProfilesByUserId({});
+                setSystemBansData([]);
             }
         } else {
             setMembersData([]);
             setProfilesByUserId({});
+            setSystemBansData([]);
         }
 
         // Fetch system-wide accepted users (usuários que já foram aceitos/aprovados em alguma pelada)
@@ -543,6 +621,7 @@ const Index = () => {
                 (a, b) => new Date(b.lastAcceptedAt).getTime() - new Date(a.lastAcceptedAt).getTime(),
             );
             setSystemAccepted(systemArray);
+            systemAcceptedForCache = systemArray;
         } catch (err) {
             console.error("Erro buscando aceitos do sistema:", err);
             setSystemAccepted([]);
@@ -550,14 +629,18 @@ const Index = () => {
 
         setMyPeladas(myEnriched);
         // também inclua peladas onde o usuário é admin delegado
-        const delegatedList = (allData || [])
+        const delegatedCandidates = (allData || [])
             .filter((p) => delegatedAdminPeladaIds.has(p.id) && !(myData || []).some((mp) => mp.id === p.id))
             .filter((p) => {
                 const start = parsePeladaStartLocal(p.date, p.time);
                 if (!start) return true;
                 return start.getTime() + TWO_HOURS_MS > now.getTime();
             });
-        const delegatedEnriched = delegatedList.length > 0 ? await enrichWithCounts(delegatedList) : [];
+        const delegatedFallback = (allData || []).filter(
+            (p) => delegatedAdminPeladaIds.has(p.id) && !(myData || []).some((mp) => mp.id === p.id),
+        );
+        const delegatedSource = delegatedCandidates.length > 0 ? delegatedCandidates : delegatedFallback;
+        const delegatedEnriched = delegatedSource.length > 0 ? await enrichWithCounts(delegatedSource) : [];
         const mergedManaged = [...myEnriched, ...delegatedEnriched].sort((a, b) => {
             const aStart = parsePeladaStartLocal(a.date, a.time);
             const bStart = parsePeladaStartLocal(b.date, b.time);
@@ -568,11 +651,38 @@ const Index = () => {
         });
         setManagedPeladas(mergedManaged);
         setAvailablePeladas(decoratedAvailable);
+        writeDashboardCache(user.id, {
+            myPeladas: myEnriched,
+            availablePeladas: decoratedAvailable,
+            managedPeladas: mergedManaged,
+            notificationEvents: mergedEvents,
+            pendingGlobalCount: Array.from(pendingByPelada.values()).reduce((acc, value) => acc + value, 0),
+            membersData: membersForCache,
+            profilesByUserId: profilesForCache,
+            bansData: bansRows,
+            systemBansData: systemBansForCache,
+            joinRequests: (requestsEventsRes.data || []) as Tables<"pelada_join_requests">[],
+            systemAccepted: systemAcceptedForCache,
+        });
         setFetching(false);
     }, [user, enrichWithCounts]);
 
     useEffect(() => {
         if (user) {
+            const cached = readDashboardCache(user.id);
+            if (cached) {
+                setMyPeladas(cached.myPeladas || []);
+                setAvailablePeladas(cached.availablePeladas || []);
+                setManagedPeladas(cached.managedPeladas || []);
+                setNotificationEvents(cached.notificationEvents || []);
+                setPendingGlobalCount(cached.pendingGlobalCount || 0);
+                setMembersData(cached.membersData || []);
+                setProfilesByUserId(cached.profilesByUserId || {});
+                setBansData(cached.bansData || []);
+                setSystemBansData(cached.systemBansData || []);
+                setJoinRequests(cached.joinRequests || []);
+                setSystemAccepted(cached.systemAccepted || []);
+            }
             fetchPeladas();
             fetchParticipationStats();
         }
