@@ -1212,7 +1212,7 @@ const Index = () => {
         { key: "membros", label: "Membros", icon: Users, show: isSuperAdmin || managedPeladas.length > 0 },
         { key: "admin", label: "Minhas peladas", icon: FolderKanban, show: managedPeladas.length > 0 || isSuperAdmin },
         { key: "disponiveis", label: "Peladas disponíveis", icon: Users, show: true },
-        { key: "torneios", label: "Torneios", icon: Trophy, show: isSuperAdmin, to: "/admin/torneios" },
+        { key: "torneios", label: "Torneios", icon: Trophy, show: true, to: "/admin/torneios" },
     ];
 
     const handleSectionChange = (key: DashboardSection) => {
@@ -1251,22 +1251,20 @@ const Index = () => {
                 onSignOut={signOut}
                 actions={
                     <div className="flex items-center gap-2">
-                        {isSuperAdmin && (
-                            <>
-                                <Link to="/admin/torneios">
-                                    <Button variant="outline" size="sm" className="gap-2">
-                                        <Trophy className="h-4 w-4" />
-                                        <span className="hidden sm:inline">Torneios</span>
-                                    </Button>
-                                </Link>
+                        <Link to="/admin/torneios">
+                            <Button variant="outline" size="sm" className="gap-2">
+                                <Trophy className="h-4 w-4" />
+                                <span className="hidden sm:inline">Torneios</span>
+                            </Button>
+                        </Link>
 
-                                <Link to="/admin">
-                                    <Button variant="outline" size="sm" className="gap-2">
-                                        <Shield className="h-4 w-4" />
-                                        <span className="hidden sm:inline">Admin</span>
-                                    </Button>
-                                </Link>
-                            </>
+                        {isSuperAdmin && (
+                            <Link to="/admin">
+                                <Button variant="outline" size="sm" className="gap-2">
+                                    <Shield className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Admin</span>
+                                </Button>
+                            </Link>
                         )}
 
                         <NotificationsSheet
