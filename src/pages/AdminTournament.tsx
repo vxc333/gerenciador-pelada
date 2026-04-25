@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ImagePlus, LayoutDashboard, PlayCircle, Save, Shield, Swords, Trophy, Upload } from "lucide-react";
+import { ArrowRightLeft, ImagePlus, LayoutDashboard, PlayCircle, Save, Shield, Swords, Trophy, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -36,7 +37,6 @@ import {
   type GoalEvent,
   type TeamSeed,
   type TieBreakerCriterion,
-  type TournamentMatch,
   type TournamentStatus,
   type TournamentType,
 } from "@/modules/tournaments";
@@ -47,6 +47,7 @@ type MatchRow = Tables<"tournament_matches">;
 type MatchResultRow = Tables<"tournament_match_results">;
 type LinkRow = Tables<"tournament_player_team_links">;
 type ProfileRow = Tables<"user_profiles">;
+type TransferEventRow = Tables<"tournament_transfer_events">;
 
 const statusLabel: Record<TournamentStatus, string> = {
   DRAFT: "Rascunho",
@@ -101,6 +102,12 @@ interface MatchEditorState {
   cards: CardEvent[];
 }
 
+interface TransferDraftState {
+  linkId: string;
+  toTeamId: string;
+  reason: string;
+}
+
 const defaultForm: CreateTournamentForm = {
   nome: "",
   descricao: "",
@@ -131,6 +138,11 @@ const AdminTournament = () => {
   const [resultsByMatch, setResultsByMatch] = useState<Record<string, MatchResultRow>>({});
   const [profilesByUser, setProfilesByUser] = useState<Record<string, ProfileRow>>({});
   const [activeLinksByTournament, setActiveLinksByTournament] = useState<Record<string, LinkRow[]>>({});
+  const [transferEventsByTournament, setTransferEventsByTournament] = useState<Record<string, TransferEventRow[]>>({});
+  const [adminByTournament, setAdminByTournament] = useState<Record<string, boolean>>({});
+  const [memberByTournament, setMemberByTournament] = useState<Record<string, boolean>>({});
+  const [transferDraftByTournament, setTransferDraftByTournament] = useState<Record<string, TransferDraftState>>({});
+  const [runningTransferForTournament, setRunningTransferForTournament] = useState<string | null>(null);
 
   const [form, setForm] = useState<CreateTournamentForm>(defaultForm);
   const [creating, setCreating] = useState(false);
@@ -151,24 +163,53 @@ const AdminTournament = () => {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    setIsSystemAdmin(!!superAdmin);
+    const hasSystemAdminRole = !!superAdmin;
+    setIsSystemAdmin(hasSystemAdminRole);
 
-    const [{ data: created }, { data: adminRows }] = await Promise.all([
+    const [{ data: created }, { data: adminRows }, { data: ownedTeams }, { data: activeLinks }, { data: acceptedTeamPlayers }] = await Promise.all([
       supabase.from("tournaments").select("*").eq("created_by", user.id).order("created_at", { ascending: false }),
-      supabase.from("tournament_admins").select("tournament_id").eq("user_id", user.id),
+      supabase.from("tournament_admins").select("*").eq("user_id", user.id),
+      supabase.from("tournament_teams").select("tournament_id").eq("owner_user_id", user.id),
+      supabase.from("tournament_player_team_links").select("tournament_id").eq("user_id", user.id).eq("status", "ATIVO"),
+      supabase.from("tournament_team_players").select("tournament_id").eq("user_id", user.id).eq("invite_status", "ACEITO"),
     ]);
 
-    const adminTournamentIds = (adminRows || []).map((row) => row.tournament_id);
-    let adminTournaments: TournamentRow[] = [];
-    if (adminTournamentIds.length > 0) {
-      const { data } = await supabase.from("tournaments").select("*").in("id", adminTournamentIds);
-      adminTournaments = data || [];
+    const adminTournamentIds = new Set<string>([
+      ...(created || []).map((t) => t.id),
+      ...((adminRows || []).map((row) => row.tournament_id)),
+    ]);
+
+    const participantTournamentIds = new Set<string>([
+      ...Array.from(adminTournamentIds),
+      ...((ownedTeams || []).map((row) => row.tournament_id)),
+      ...((activeLinks || []).map((row) => row.tournament_id)),
+      ...((acceptedTeamPlayers || []).map((row) => row.tournament_id)),
+    ]);
+
+    let participantTournaments: TournamentRow[] = [];
+    const ids = Array.from(participantTournamentIds);
+    if (ids.length > 0) {
+      const { data } = await supabase.from("tournaments").select("*").in("id", ids);
+      participantTournaments = data || [];
     }
 
-    const merged = [...(created || []), ...adminTournaments];
+    const merged = [...(created || []), ...participantTournaments];
     const unique = Array.from(new Map(merged.map((t) => [t.id, t])).values()).sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
+
+    const memberMap: Record<string, boolean> = {};
+    unique.forEach((tournament) => {
+      memberMap[tournament.id] = true;
+    });
+
+    const adminMap: Record<string, boolean> = {};
+    unique.forEach((tournament) => {
+      adminMap[tournament.id] = hasSystemAdminRole || tournament.created_by === user.id || adminTournamentIds.has(tournament.id);
+    });
+
+    setMemberByTournament(memberMap);
+    setAdminByTournament(adminMap);
 
     setTournaments(unique);
 
@@ -179,19 +220,31 @@ const AdminTournament = () => {
       setResultsByMatch({});
       setProfilesByUser({});
       setActiveLinksByTournament({});
+      setTransferEventsByTournament({});
       setLoadingData(false);
       return;
     }
 
-    const [teamsRes, matchesRes, resultsRes, linksRes] = await Promise.all([
+    const adminVisibleTournamentIds = tournamentIds.filter((id) => adminMap[id]);
+
+    const [teamsRes, matchesRes, resultsRes, linksRes, transfersRes] = await Promise.all([
       supabase.from("tournament_teams").select("*").in("tournament_id", tournamentIds),
       supabase.from("tournament_matches").select("*").in("tournament_id", tournamentIds).order("created_at", { ascending: true }),
       supabase.from("tournament_match_results").select("*").in("tournament_id", tournamentIds),
-      supabase
-        .from("tournament_player_team_links")
-        .select("*")
-        .in("tournament_id", tournamentIds)
-        .eq("status", "ATIVO"),
+      adminVisibleTournamentIds.length > 0
+        ? supabase
+            .from("tournament_player_team_links")
+            .select("*")
+            .in("tournament_id", adminVisibleTournamentIds)
+            .eq("status", "ATIVO")
+        : Promise.resolve({ data: [] as LinkRow[] }),
+      adminVisibleTournamentIds.length > 0
+        ? supabase
+            .from("tournament_transfer_events")
+            .select("*")
+            .in("tournament_id", adminVisibleTournamentIds)
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [] as TransferEventRow[] }),
     ]);
 
     const teamMap: Record<string, TeamRow[]> = {};
@@ -221,10 +274,21 @@ const AdminTournament = () => {
     });
     setActiveLinksByTournament(linksMap);
 
+    const transferMap: Record<string, TransferEventRow[]> = {};
+    (transfersRes.data || []).forEach((event) => {
+      if (!transferMap[event.tournament_id]) transferMap[event.tournament_id] = [];
+      transferMap[event.tournament_id].push(event);
+    });
+    setTransferEventsByTournament(transferMap);
+
     const userIds = new Set<string>();
     (linksRes.data || []).forEach((link) => userIds.add(link.user_id));
     (resultsRes.data || []).forEach((result) => {
       if (result.mvp_user_id) userIds.add(result.mvp_user_id);
+    });
+    (transfersRes.data || []).forEach((event) => {
+      userIds.add(event.user_id);
+      userIds.add(event.created_by);
     });
 
     if (userIds.size > 0) {
@@ -600,6 +664,120 @@ const AdminTournament = () => {
     await loadData();
   };
 
+  const isTournamentAdmin = useCallback(
+    (tournamentId: string) => {
+      return !!adminByTournament[tournamentId];
+    },
+    [adminByTournament]
+  );
+
+  const isTransferWindowOpen = useCallback((tournament: TournamentRow) => {
+    const now = Date.now();
+    const startsAt = tournament.transfer_window_starts_at ? new Date(tournament.transfer_window_starts_at).getTime() : null;
+    const endsAt = tournament.transfer_window_ends_at ? new Date(tournament.transfer_window_ends_at).getTime() : null;
+    const closedAt = tournament.transfer_window_closed_at ? new Date(tournament.transfer_window_closed_at).getTime() : null;
+
+    if (closedAt) return false;
+    if (startsAt && now < startsAt) return false;
+    if (endsAt && now > endsAt) return false;
+
+    return ["INSCRICOES_ABERTAS", "INSCRICOES_ENCERRADAS", "TABELA_GERADA"].includes(tournament.status);
+  }, []);
+
+  const executeTransfer = async (tournament: TournamentRow) => {
+    if (!user) return;
+    if (!isTournamentAdmin(tournament.id)) {
+      toast.error("Sem permissão para realizar transferências");
+      return;
+    }
+
+    const draft = transferDraftByTournament[tournament.id];
+    if (!draft?.linkId || !draft?.toTeamId) {
+      toast.error("Selecione jogador e time de destino");
+      return;
+    }
+
+    const sourceLink = (activeLinksByTournament[tournament.id] || []).find((item) => item.id === draft.linkId);
+    if (!sourceLink) {
+      toast.error("Vínculo de jogador não encontrado");
+      return;
+    }
+
+    if (sourceLink.tournament_team_id === draft.toTeamId) {
+      toast.error("O jogador já está no time selecionado");
+      return;
+    }
+
+    setRunningTransferForTournament(tournament.id);
+
+    const nowIso = new Date().toISOString();
+
+    const { error: removeError } = await supabase
+      .from("tournament_player_team_links")
+      .update({ status: "SUBSTITUIDO", ended_at: nowIso })
+      .eq("id", sourceLink.id)
+      .eq("status", "ATIVO");
+
+    if (removeError) {
+      setRunningTransferForTournament(null);
+      toast.error(`Erro ao remover vínculo antigo: ${removeError.message}`);
+      return;
+    }
+
+    const { data: newLink, error: createError } = await supabase
+      .from("tournament_player_team_links")
+      .insert({
+        tournament_id: tournament.id,
+        tournament_team_id: draft.toTeamId,
+        user_id: sourceLink.user_id,
+        status: "ATIVO",
+        origin: "TRANSFERENCIA_INTERNA",
+        created_by: user.id,
+      })
+      .select("id")
+      .single();
+
+    if (createError || !newLink) {
+      await supabase
+        .from("tournament_player_team_links")
+        .update({ status: "ATIVO", ended_at: null, replaced_by_link_id: null })
+        .eq("id", sourceLink.id);
+
+      setRunningTransferForTournament(null);
+      toast.error(`Erro ao criar novo vínculo: ${createError?.message || "falha"}`);
+      return;
+    }
+
+    await supabase
+      .from("tournament_player_team_links")
+      .update({ replaced_by_link_id: newLink.id })
+      .eq("id", sourceLink.id);
+
+    const { error: transferEventError } = await supabase.from("tournament_transfer_events").insert({
+      tournament_id: tournament.id,
+      user_id: sourceLink.user_id,
+      from_team_id: sourceLink.tournament_team_id,
+      to_team_id: draft.toTeamId,
+      source_type: "TRANSFERENCIA",
+      reason: draft.reason?.trim() || null,
+      created_by: user.id,
+    });
+
+    setRunningTransferForTournament(null);
+
+    if (transferEventError) {
+      toast.error(`Transferência aplicada, mas evento não foi registrado: ${transferEventError.message}`);
+    } else {
+      toast.success("Transferência concluída com sucesso");
+    }
+
+    setTransferDraftByTournament((prev) => ({
+      ...prev,
+      [tournament.id]: { linkId: "", toTeamId: "", reason: "" },
+    }));
+    await loadData();
+  };
+
   if (loading || !profileChecked) return null;
   if (!user) return <Navigate to="/auth" replace />;
   if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
@@ -639,6 +817,7 @@ const AdminTournament = () => {
       }
       >
         <PageContent className="max-w-6xl space-y-6">
+        {isSystemAdmin && (
         <PageSectionCard
           title="CRIAR TORNEIO"
           description="Somente admins podem alterar regras, estados, sorteio/tabela e resultados"
@@ -772,6 +951,7 @@ const AdminTournament = () => {
             </Button>
           </div>
         </PageSectionCard>
+        )}
 
         <PageSectionCard
           title="TORNEIOS"
@@ -783,6 +963,12 @@ const AdminTournament = () => {
             {tournaments.map((tournament) => {
               const teams = teamsByTournament[tournament.id] || [];
               const matches = matchesByTournament[tournament.id] || [];
+              const canManage = isTournamentAdmin(tournament.id);
+              const isMember = !!memberByTournament[tournament.id];
+              const transferDraft = transferDraftByTournament[tournament.id] || { linkId: "", toTeamId: "", reason: "" };
+              const transferEvents = transferEventsByTournament[tournament.id] || [];
+              const links = activeLinksByTournament[tournament.id] || [];
+              const transferWindowOpen = isTransferWindowOpen(tournament);
 
               return (
                 <div key={tournament.id} className="rounded-lg border border-border/50 p-4">
@@ -799,111 +985,272 @@ const AdminTournament = () => {
                       <p className="mt-2 text-xs text-muted-foreground">
                         Tipo: {tournament.tournament_type} • Times: {teams.length} • Jogos: {matches.length}
                       </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Select
-                        value={tournament.status}
-                        onValueChange={(value) => changeTournamentStatus(tournament, value as TournamentStatus)}
-                      >
-                        <SelectTrigger className="w-56">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {orderedStatus.map((status) => (
-                            <SelectItem
-                              key={`${tournament.id}-${status}`}
-                              value={status}
-                              disabled={!canTransitionTournamentStatus(tournament.status as TournamentStatus, status)}
-                            >
-                              {statusLabel[status]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
-                      <Button
-                        variant="secondary"
-                        className="gap-2"
-                        disabled={
-                          tournament.status !== "INSCRICOES_ENCERRADAS" ||
-                          generatingForTournament === tournament.id
-                        }
-                        onClick={() => createDrawAndFixtures(tournament)}
-                      >
-                        <Swords className="h-4 w-4" />
-                        {generatingForTournament === tournament.id ? "Gerando..." : "Gerar tabela"}
-                      </Button>
-
-                      <Label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
-                        <ImagePlus className="h-4 w-4" />
-                        {uploadingImageForTournament === tournament.id ? "Enviando..." : "Imagem"}
-                        <input
-                          className="hidden"
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            void uploadTournamentImage(tournament, file);
-                            e.currentTarget.value = "";
-                          }}
-                        />
-                      </Label>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Acesso: {canManage ? "Administração" : isMember ? "Participante" : "Leitura"}
+                      </p>
                     </div>
                   </div>
 
-                  {tournament.image_url ? (
-                    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                      <Upload className="h-3.5 w-3.5" />
-                      imagem v{tournament.image_version}
-                    </div>
-                  ) : null}
+                  <Tabs defaultValue="administracao" className="mt-4">
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="administracao">Administração</TabsTrigger>
+                      <TabsTrigger value="elenco">Elenco</TabsTrigger>
+                      <TabsTrigger value="transferencias">Transferências</TabsTrigger>
+                    </TabsList>
 
-                  <div className="mt-4 grid gap-2 md:grid-cols-2">
-                    {matches.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Sem jogos gerados.</p>
-                    ) : (
-                      matches.map((match) => {
-                        const result = resultsByMatch[match.id];
-                        const isLocked = result?.status === "VALIDADO";
+                    <TabsContent value="administracao" className="space-y-3">
+                      {!canManage && (
+                        <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+                          Você está vendo essa aba como participante. Ações administrativas ficam bloqueadas para seu perfil.
+                        </div>
+                      )}
 
-                        return (
-                          <div key={match.id} className="rounded-md border border-border/50 p-3">
-                            <p className="text-xs text-muted-foreground">
-                              {match.phase}
-                              {match.group_label ? ` • ${match.group_label}` : ""}
-                              {match.round_number ? ` • rodada ${match.round_number}` : ""}
-                            </p>
-                            <p className="mt-1 text-sm font-medium text-foreground">
-                              {teamNameById(tournament.id, match.home_team_id)} x {teamNameById(tournament.id, match.away_team_id)}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Status jogo: {match.status}
-                              {result ? ` • Resultado: ${result.status}` : ""}
-                            </p>
-                            {result ? (
-                              <p className="text-xs text-muted-foreground">
-                                Placar: {result.home_score} x {result.away_score}
-                              </p>
-                            ) : null}
-                            <div className="mt-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-2"
-                                disabled={isLocked}
-                                onClick={() => openMatchEditor(tournament, match)}
+                      <div className="flex flex-wrap gap-2">
+                        <Select
+                          value={tournament.status}
+                          disabled={!canManage}
+                          onValueChange={(value) => changeTournamentStatus(tournament, value as TournamentStatus)}
+                        >
+                          <SelectTrigger className="w-56">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {orderedStatus.map((status) => (
+                              <SelectItem
+                                key={`${tournament.id}-${status}`}
+                                value={status}
+                                disabled={!canTransitionTournamentStatus(tournament.status as TournamentStatus, status)}
                               >
-                                <PlayCircle className="h-4 w-4" />
-                                {isLocked ? "Resultado validado" : "Lançar resultado"}
-                              </Button>
+                                {statusLabel[status]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        <Button
+                          variant="secondary"
+                          className="gap-2"
+                          disabled={
+                            !canManage ||
+                            tournament.status !== "INSCRICOES_ENCERRADAS" ||
+                            generatingForTournament === tournament.id
+                          }
+                          onClick={() => createDrawAndFixtures(tournament)}
+                        >
+                          <Swords className="h-4 w-4" />
+                          {generatingForTournament === tournament.id ? "Gerando..." : "Gerar tabela"}
+                        </Button>
+
+                        <Label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                          <ImagePlus className="h-4 w-4" />
+                          {uploadingImageForTournament === tournament.id ? "Enviando..." : "Imagem"}
+                          <input
+                            className="hidden"
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            disabled={!canManage}
+                            onChange={(e) => {
+                              if (!canManage) return;
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              void uploadTournamentImage(tournament, file);
+                              e.currentTarget.value = "";
+                            }}
+                          />
+                        </Label>
+                      </div>
+
+                      {tournament.image_url ? (
+                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                          <Upload className="h-3.5 w-3.5" />
+                          imagem v{tournament.image_version}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-2 grid gap-2 md:grid-cols-2">
+                        {matches.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Sem jogos gerados.</p>
+                        ) : (
+                          matches.map((match) => {
+                            const result = resultsByMatch[match.id];
+                            const isLocked = result?.status === "VALIDADO";
+
+                            return (
+                              <div key={match.id} className="rounded-md border border-border/50 p-3">
+                                <p className="text-xs text-muted-foreground">
+                                  {match.phase}
+                                  {match.group_label ? ` • ${match.group_label}` : ""}
+                                  {match.round_number ? ` • rodada ${match.round_number}` : ""}
+                                </p>
+                                <p className="mt-1 text-sm font-medium text-foreground">
+                                  {teamNameById(tournament.id, match.home_team_id)} x {teamNameById(tournament.id, match.away_team_id)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Status jogo: {match.status}
+                                  {result ? ` • Resultado: ${result.status}` : ""}
+                                </p>
+                                {result ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    Placar: {result.home_score} x {result.away_score}
+                                  </p>
+                                ) : null}
+                                <div className="mt-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="gap-2"
+                                    disabled={!canManage || isLocked}
+                                    onClick={() => openMatchEditor(tournament, match)}
+                                  >
+                                    <PlayCircle className="h-4 w-4" />
+                                    {!canManage ? "Sem permissão" : isLocked ? "Resultado validado" : "Lançar resultado"}
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="elenco" className="space-y-3">
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {teams.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Sem times cadastrados.</p>
+                        ) : (
+                          teams.map((team) => {
+                            const rosterCount = links.filter((link) => link.tournament_team_id === team.id).length;
+                            return (
+                              <div key={team.id} className="rounded-md border border-border/50 p-3">
+                                <p className="text-sm font-medium text-foreground">{team.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Status: {team.status} • Dono: {profilesByUser[team.owner_user_id]?.display_name || "Usuário"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">Atletas ativos: {rosterCount}</p>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="transferencias" className="space-y-3">
+                      {!canManage ? (
+                        <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+                          Apenas admins do torneio podem visualizar e lançar transferências.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+                            Janela de transferências: {transferWindowOpen ? "aberta" : "fechada"}
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div className="space-y-2">
+                              <Label>Jogador (vínculo atual)</Label>
+                              <Select
+                                value={transferDraft.linkId || "none"}
+                                onValueChange={(value) =>
+                                  setTransferDraftByTournament((prev) => ({
+                                    ...prev,
+                                    [tournament.id]: {
+                                      ...transferDraft,
+                                      linkId: value === "none" ? "" : value,
+                                    },
+                                  }))
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Selecione</SelectItem>
+                                  {links.map((link) => (
+                                    <SelectItem key={link.id} value={link.id}>
+                                      {(profilesByUser[link.user_id]?.display_name || "Jogador")} • {teamNameById(tournament.id, link.tournament_team_id)}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Time de destino</Label>
+                              <Select
+                                value={transferDraft.toTeamId || "none"}
+                                onValueChange={(value) =>
+                                  setTransferDraftByTournament((prev) => ({
+                                    ...prev,
+                                    [tournament.id]: {
+                                      ...transferDraft,
+                                      toTeamId: value === "none" ? "" : value,
+                                    },
+                                  }))
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Selecione</SelectItem>
+                                  {teams.map((team) => (
+                                    <SelectItem key={team.id} value={team.id}>
+                                      {team.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Motivo</Label>
+                              <Input
+                                value={transferDraft.reason}
+                                onChange={(e) =>
+                                  setTransferDraftByTournament((prev) => ({
+                                    ...prev,
+                                    [tournament.id]: {
+                                      ...transferDraft,
+                                      reason: e.target.value,
+                                    },
+                                  }))
+                                }
+                              />
                             </div>
                           </div>
-                        );
-                      })
-                    )}
-                  </div>
+
+                          <div className="flex justify-end">
+                            <Button
+                              className="gap-2"
+                              disabled={!transferWindowOpen || runningTransferForTournament === tournament.id}
+                              onClick={() => executeTransfer(tournament)}
+                            >
+                              <ArrowRightLeft className="h-4 w-4" />
+                              {runningTransferForTournament === tournament.id ? "Transferindo..." : "Executar transferência"}
+                            </Button>
+                          </div>
+
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Histórico de transferências</p>
+                            {transferEvents.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">Nenhuma transferência registrada.</p>
+                            ) : (
+                              transferEvents.slice(0, 20).map((event) => (
+                                <div key={event.id} className="rounded-md border border-border/50 p-2 text-xs">
+                                  <p className="text-foreground">
+                                    {(profilesByUser[event.user_id]?.display_name || "Jogador")} • {teamNameById(tournament.id, event.from_team_id)} → {teamNameById(tournament.id, event.to_team_id)}
+                                  </p>
+                                  <p className="text-muted-foreground">
+                                    {event.reason || "Sem motivo"} • {new Date(event.created_at).toLocaleString("pt-BR")}
+                                  </p>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                 </div>
               );
             })}
