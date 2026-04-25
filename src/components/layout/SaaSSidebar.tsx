@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 export interface SidebarItem {
@@ -22,6 +23,18 @@ export function SaaSSidebar({
   className,
 }: SaaSSidebarProps) {
   const location = useLocation();
+  const activePath = useMemo(() => {
+    const pathname = location.pathname !== "/" && location.pathname.endsWith("/")
+      ? location.pathname.slice(0, -1)
+      : location.pathname;
+
+    const matches = items
+      .map((item) => item.to)
+      .filter((to) => pathname === to || pathname.startsWith(`${to}/`))
+      .sort((a, b) => b.length - a.length);
+
+    return matches[0] || "";
+  }, [items, location.pathname]);
 
   return (
     <aside className={cn("rounded-lg border border-border/80 bg-sidebar p-2", className)}>
@@ -31,7 +44,7 @@ export function SaaSSidebar({
       <nav className="space-y-1">
         {items.map((item) => {
           const Icon = item.icon;
-          const active = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+          const active = activePath === item.to;
 
           return (
             <Link

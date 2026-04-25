@@ -206,9 +206,18 @@ const AdminTournament = () => {
     const hasSystemAdminRole = !!superAdmin;
     setIsSystemAdmin(hasSystemAdminRole);
 
-    const [{ data: allTournaments }, { data: adminRows }] = await Promise.all([
+    const [
+      { data: allTournaments },
+      { data: adminRows },
+      { data: participantLinksRows },
+      { data: ownedTeamsRows },
+      { data: teamPlayersRows },
+    ] = await Promise.all([
       supabase.from("tournaments").select("*").order("created_at", { ascending: false }),
       supabase.from("tournament_admins").select("tournament_id").eq("user_id", user.id),
+      supabase.from("tournament_player_team_links").select("tournament_id").eq("user_id", user.id),
+      supabase.from("tournament_teams").select("tournament_id").eq("owner_user_id", user.id),
+      supabase.from("tournament_team_players").select("tournament_id").eq("user_id", user.id),
     ]);
 
     const adminTournamentIds = new Set<string>([
@@ -216,14 +225,26 @@ const AdminTournament = () => {
       ...(adminRows || []).map((row) => row.tournament_id),
     ]);
 
-    const merged = [...((allTournaments || []) as TournamentRow[])];
+    const participantTournamentIds = new Set<string>([
+      ...(participantLinksRows || []).map((row) => row.tournament_id),
+      ...(ownedTeamsRows || []).map((row) => row.tournament_id),
+      ...(teamPlayersRows || []).map((row) => row.tournament_id),
+    ]);
+
+    const merged = ((allTournaments || []) as TournamentRow[]).filter((tournament) => {
+      if (hasSystemAdminRole) return true;
+      if (adminTournamentIds.has(tournament.id)) return true;
+      if (participantTournamentIds.has(tournament.id)) return true;
+      return tournament.status === "INSCRICOES_ABERTAS";
+    });
     const unique = Array.from(new Map(merged.map((t) => [t.id, t])).values()).sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
     const memberMap: Record<string, boolean> = {};
     unique.forEach((tournament) => {
-      memberMap[tournament.id] = true;
+      memberMap[tournament.id] =
+        hasSystemAdminRole || adminTournamentIds.has(tournament.id) || participantTournamentIds.has(tournament.id);
     });
 
     const adminMap: Record<string, boolean> = {};
