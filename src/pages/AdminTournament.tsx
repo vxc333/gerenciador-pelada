@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ImagePlus, PlayCircle, Save, ShieldCheck, Swords, Trophy, Upload } from "lucide-react";
+import { ImagePlus, LayoutDashboard, PlayCircle, Save, Shield, Swords, Trophy, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
-import { AppHeader } from "@/components/layout/AppHeader";
+import { AdminShell } from "@/components/layout/AdminShell";
 import { PageContent, PageSectionCard } from "@/components/layout/PageLayout";
 import { PageState } from "@/components/layout/PageState";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import {
   type CardEvent,
   type GoalEvent,
   type TeamSeed,
+  type TieBreakerCriterion,
   type TournamentMatch,
   type TournamentStatus,
   type TournamentType,
@@ -76,9 +77,18 @@ interface CreateTournamentForm {
   torneioOficial: boolean;
   idaEVolta: boolean;
   acumulacaoCartoes: boolean;
-  criteriosDesempate: string;
+  criteriosDesempate: TieBreakerCriterion[];
   minimoJogadores: string;
 }
+
+const tieBreakerOptions: Array<{ value: TieBreakerCriterion; label: string }> = [
+  { value: "PONTOS", label: "Pontos" },
+  { value: "SALDO_GOLS", label: "Saldo de gols" },
+  { value: "GOLS_PRO", label: "Gols pró" },
+  { value: "CONFRONTO_DIRETO", label: "Confronto direto" },
+  { value: "CARTOES", label: "Disciplina (cartões)" },
+  { value: "SORTEIO", label: "Sorteio" },
+];
 
 interface MatchEditorState {
   match: MatchRow;
@@ -100,7 +110,7 @@ const defaultForm: CreateTournamentForm = {
   torneioOficial: false,
   idaEVolta: false,
   acumulacaoCartoes: true,
-  criteriosDesempate: "PONTOS,SALDO_GOLS,GOLS_PRO",
+  criteriosDesempate: ["PONTOS", "SALDO_GOLS", "GOLS_PRO"],
   minimoJogadores: "5",
 };
 
@@ -262,10 +272,13 @@ const AdminTournament = () => {
     }
 
     setCreating(true);
-    const tieBreakerCriteria = form.criteriosDesempate
-      .split(",")
-      .map((item) => item.trim().toUpperCase())
-      .filter(Boolean);
+    if (form.criteriosDesempate.length === 0) {
+      toast.error("Selecione ao menos 1 critério de desempate");
+      setCreating(false);
+      return;
+    }
+
+    const tieBreakerCriteria = form.criteriosDesempate;
 
     const { error } = await supabase.from("tournaments").insert({
       name: form.nome.trim(),
@@ -606,22 +619,26 @@ const AdminTournament = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader
-        title="PAINEL DE TORNEIOS"
-        subtitle="Criação, gestão de estados, tabela e resultados"
-        backTo="/admin"
-        actions={
-          <Link to="/admin">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ShieldCheck className="h-4 w-4" />
-              Sistema
-            </Button>
-          </Link>
-        }
-      />
-
-      <PageContent className="max-w-6xl space-y-6">
+    <>
+      <AdminShell
+      title="PAINEL DE TORNEIOS"
+      subtitle="Criação, gestão de estados, tabela e resultados"
+      backTo="/admin"
+      navItems={[
+        { label: "Dashboard", to: "/", icon: LayoutDashboard },
+        { label: "Sistema", to: "/admin", icon: Shield },
+        { label: "Torneios", to: "/admin/torneios", icon: Trophy },
+      ]}
+      actions={
+        <Link to="/admin">
+          <Button variant="outline" size="sm" className="gap-2">
+            <Shield className="h-4 w-4" />
+            Sistema
+          </Button>
+        </Link>
+      }
+      >
+        <PageContent className="max-w-6xl space-y-6">
         <PageSectionCard
           title="CRIAR TORNEIO"
           description="Somente admins podem alterar regras, estados, sorteio/tabela e resultados"
@@ -665,12 +682,39 @@ const AdminTournament = () => {
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label>Critérios de desempate (ordem por vírgula)</Label>
-              <Input
-                value={form.criteriosDesempate}
-                onChange={(e) => setForm((prev) => ({ ...prev, criteriosDesempate: e.target.value }))}
-                placeholder="PONTOS,SALDO_GOLS,GOLS_PRO,CONFRONTO_DIRETO"
-              />
+              <Label>Critérios de desempate (seleção controlada)</Label>
+              <div className="grid gap-2 rounded-md border border-border/60 bg-muted/20 p-3 sm:grid-cols-2">
+                {tieBreakerOptions.map((option) => {
+                  const checked = form.criteriosDesempate.includes(option.value);
+                  return (
+                    <label key={option.value} className="flex items-center gap-2 text-sm text-foreground">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(isChecked) => {
+                          setForm((prev) => {
+                            if (isChecked) {
+                              if (prev.criteriosDesempate.includes(option.value)) return prev;
+                              return {
+                                ...prev,
+                                criteriosDesempate: [...prev.criteriosDesempate, option.value],
+                              };
+                            }
+
+                            return {
+                              ...prev,
+                              criteriosDesempate: prev.criteriosDesempate.filter((item) => item !== option.value),
+                            };
+                          });
+                        }}
+                      />
+                      {option.label}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                A ordem dos critérios selecionados é a ordem de aplicação no desempate.
+              </p>
             </div>
 
             <div className="flex items-center gap-3">
@@ -865,7 +909,8 @@ const AdminTournament = () => {
             })}
           </div>
         </PageSectionCard>
-      </PageContent>
+        </PageContent>
+      </AdminShell>
 
       <Dialog open={!!editorState} onOpenChange={(open) => !open && setEditorState(null)}>
         <DialogContent className="max-w-2xl">
@@ -1130,7 +1175,7 @@ const AdminTournament = () => {
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 };
 

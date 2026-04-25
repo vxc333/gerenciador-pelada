@@ -4,12 +4,12 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { AppHeader } from "@/components/layout/AppHeader";
 import { PageContent, PageSectionCard } from "@/components/layout/PageLayout";
 import { PageState } from "@/components/layout/PageState";
 import { SystemAccessSection } from "@/components/admin/SystemAccessSection";
+import { AdminShell } from "@/components/layout/AdminShell";
 import { Button } from "@/components/ui/button";
-import { Trophy } from "lucide-react";
+import { LayoutDashboard, Shield, Trophy } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
 type UserProfileRow = Tables<"user_profiles">;
@@ -193,21 +193,24 @@ const AdminSystem = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader
-        title="PAINEL ADMINISTRATIVO DO SISTEMA"
-        subtitle="Gerencie acessos automáticos e admins globais"
-        backTo="/"
-        actions={
-          <Link to="/admin/torneios">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Trophy className="h-4 w-4" />
-              Torneios
-            </Button>
-          </Link>
-        }
-      />
-
+    <AdminShell
+      title="PAINEL ADMINISTRATIVO DO SISTEMA"
+      subtitle="Gerencie acessos automáticos e admins globais"
+      backTo="/"
+      navItems={[
+        { label: "Dashboard", to: "/", icon: LayoutDashboard },
+        { label: "Sistema", to: "/admin", icon: Shield },
+        { label: "Torneios", to: "/admin/torneios", icon: Trophy },
+      ]}
+      actions={
+        <Link to="/admin/torneios">
+          <Button variant="outline" size="sm" className="gap-2">
+            <Trophy className="h-4 w-4" />
+            Torneios
+          </Button>
+        </Link>
+      }
+    >
       <PageContent className="max-w-2xl space-y-5">
         <SystemAccessSection
           title="MEMBROS COM ACESSO AUTOMÁTICO"
@@ -249,7 +252,7 @@ const AdminSystem = () => {
           </ul>
         </PageSectionCard>
       </PageContent>
-    </div>
+    </AdminShell>
   );
 };
 

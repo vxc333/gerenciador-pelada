@@ -85,7 +85,7 @@ export async function calculateParticipationStats(userId: string): Promise<Parti
 
   // Filtrar apenas as peladas cujo início + 2h já passou
   const pastPeladasList = (candidatePeladas || []).filter((p) => {
-    const start = parsePeladaStart(p.date, (p as any).time);
+    const start = parsePeladaStart(p.date ?? undefined, p.time ?? undefined);
     if (!start) return false;
     return start.getTime() + TWO_HOURS <= now.getTime();
   });
@@ -248,7 +248,8 @@ export async function getUserPeladaHistory(userId: string, limit: number = 20) {
 
   if (peladasError || !peladas) return [];
 
-  const peladasMap = new Map((peladas as Array<any>).map((p) => [p.id, p]));
+  type PeladaHistoryRow = Pick<PeladaRow, "id" | "title" | "date" | "time" | "location">;
+  const peladasMap = new Map((peladas as PeladaHistoryRow[]).map((p) => [p.id, p]));
 
   const mappedHistory = (history as unknown as Array<{ pelada_id?: string; id?: string; created_at?: string }>)
     .map((entry) => {
