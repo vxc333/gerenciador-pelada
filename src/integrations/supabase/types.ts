@@ -1352,6 +1352,7 @@ export type Database = {
           created_by: string
           description: string | null
           finalized_at: string | null
+          group_stage_groups_count: number | null
           has_team_limit: boolean
           id: string
           image_url: string | null
@@ -1379,6 +1380,7 @@ export type Database = {
           created_by: string
           description?: string | null
           finalized_at?: string | null
+          group_stage_groups_count?: number | null
           has_team_limit?: boolean
           id?: string
           image_url?: string | null
@@ -1406,6 +1408,7 @@ export type Database = {
           created_by?: string
           description?: string | null
           finalized_at?: string | null
+          group_stage_groups_count?: number | null
           has_team_limit?: boolean
           id?: string
           image_url?: string | null
