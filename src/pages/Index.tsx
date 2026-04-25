@@ -14,6 +14,8 @@ import {
     History,
     FolderKanban,
     Users,
+    Shield,
+    Trophy,
     CheckCircle2,
 } from "lucide-react";
 import { AppHeader } from "@/components/layout/AppHeader";
@@ -1121,12 +1123,32 @@ const Index = () => {
                 title="PELADA DO FURTO"
                 onSignOut={signOut}
                 actions={
-                    <NotificationsSheet
-                        open={notificationsOpen}
-                        onOpenChange={setNotificationsOpen}
-                        events={notificationEvents}
-                        pendingCount={pendingGlobalCount}
-                    />
+                    <div className="flex items-center gap-2">
+                        {isSuperAdmin && (
+                            <>
+                                <Link to="/admin/torneios">
+                                    <Button variant="outline" size="sm" className="gap-2">
+                                        <Trophy className="h-4 w-4" />
+                                        <span className="hidden sm:inline">Torneios</span>
+                                    </Button>
+                                </Link>
+
+                                <Link to="/admin">
+                                    <Button variant="outline" size="sm" className="gap-2">
+                                        <Shield className="h-4 w-4" />
+                                        <span className="hidden sm:inline">Admin</span>
+                                    </Button>
+                                </Link>
+                            </>
+                        )}
+
+                        <NotificationsSheet
+                            open={notificationsOpen}
+                            onOpenChange={setNotificationsOpen}
+                            events={notificationEvents}
+                            pendingCount={pendingGlobalCount}
+                        />
+                    </div>
                 }
             />
 
