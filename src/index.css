@@ -58,6 +58,13 @@
   html {
     scrollbar-width: thin;
     scrollbar-color: hsl(220 10% 28%) hsl(220 14% 11%);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
   }
 
   ::-webkit-scrollbar {
@@ -81,6 +88,7 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body);
+    min-height: 100dvh;
     background-image:
       radial-gradient(ellipse 80% 45% at 20% -30%, hsl(220 16% 24% / 0.45), transparent),
       radial-gradient(ellipse 65% 40% at 95% 100%, hsl(220 20% 8% / 0.55), transparent);

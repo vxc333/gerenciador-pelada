@@ -1100,7 +1100,7 @@ const Index = () => {
         { key: "resumo", label: "Painel", icon: LayoutDashboard, show: true },
         { key: "historico", label: "Histórico", icon: History, show: true },
         { key: "membros", label: "Membros", icon: Users, show: isSuperAdmin || managedPeladas.length > 0 },
-        { key: "admin", label: "Minhas peladas", icon: FolderKanban, show: myPeladas.length > 0 || isSuperAdmin },
+        { key: "admin", label: "Minhas peladas", icon: FolderKanban, show: managedPeladas.length > 0 || isSuperAdmin },
         { key: "disponiveis", label: "Peladas disponíveis", icon: Users, show: true },
         { key: "torneios", label: "Torneios", icon: Trophy, show: isSuperAdmin, to: "/admin/torneios" },
     ];
@@ -1541,9 +1541,9 @@ const Index = () => {
                                 <div className="mb-3">
                                     <h2 className="font-display text-xl text-foreground">MINHAS PELADAS (ADMIN)</h2>
                                 </div>
-                                {myPeladas.length > 0 ? (
+                                {managedPeladas.length > 0 ? (
                                     <div className="space-y-3">
-                                        {myPeladas.map((pelada) => renderCard(pelada, { showAdminActions: true }))}
+                                        {managedPeladas.map((pelada) => renderCard(pelada, { showAdminActions: true }))}
                                     </div>
                                 ) : (
                                     <div className="rounded-lg border border-border bg-card p-8 text-center">
@@ -1841,7 +1841,7 @@ const Index = () => {
                         )}
 
                         {(activeSection === "disponiveis" || activeSection === "resumo") && (
-                            <div className={activeSection === "resumo" ? "hidden lg:block" : undefined}>
+                            <div>
                                 <div className="mb-3 mt-8">
                                     <h2 className="font-display text-xl text-foreground">PELADAS DISPONIVEIS</h2>
                                     <p className="text-sm text-muted-foreground">
@@ -1868,13 +1868,13 @@ const Index = () => {
                             </div>
                         )}
 
-                        {activeSection === "resumo" && myPeladas.length > 0 && (
-                            <div className="hidden lg:block">
+                        {activeSection === "resumo" && managedPeladas.length > 0 && (
+                            <div>
                                 <div className="mb-3 mt-8">
                                     <h2 className="font-display text-xl text-foreground">MINHAS PELADAS (ADMIN)</h2>
                                 </div>
                                 <div className="space-y-3">
-                                    {myPeladas.slice(0, 3).map((pelada) => renderCard(pelada, { showAdminActions: true }))}
+                                    {managedPeladas.slice(0, 3).map((pelada) => renderCard(pelada, { showAdminActions: true }))}
                                 </div>
                             </div>
                         )}
