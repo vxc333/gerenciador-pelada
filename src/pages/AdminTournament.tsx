@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database, Tables } from "@/integrations/supabase/types";
 import { AdminShell } from "@/components/layout/AdminShell";
 import { PageContent, PageSectionCard } from "@/components/layout/PageLayout";
+import { PageLoadingState } from "@/components/layout/PageLoadingState";
 import { PageState } from "@/components/layout/PageState";
 import { TournamentCreateFormCard, type TournamentCreateFormValues } from "../components/admin/TournamentCreateFormCard";
 import { Button } from "@/components/ui/button";
@@ -1100,12 +1101,12 @@ const AdminTournament = () => {
     }));
   }, [profilesByUser, selectedLinks]);
 
-  if (loading || !profileChecked) return null;
+  if (loading || !profileChecked) return <PageLoadingState />;
   if (!user) return <Navigate to="/auth" replace />;
   if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
 
   if (loadingData) {
-    return <PageState message="Carregando módulo de torneios..." />;
+    return <PageLoadingState />;
   }
 
   return (
@@ -1130,27 +1131,27 @@ const AdminTournament = () => {
       <AdminShell
       title="PAINEL DE TORNEIOS"
       subtitle="Inscrição de membros, gestão de estados, tabela e resultados"
-      backTo="/admin"
+      backTo={isSystemAdmin ? "/admin" : "/"}
       navItems={[
         { label: "Dashboard", to: "/", icon: LayoutDashboard },
-        { label: "Sistema", to: "/admin", icon: Shield },
+        ...(isSystemAdmin ? [{ label: "Sistema", to: "/admin", icon: Shield }] : []),
         { label: "Torneios", to: "/admin/torneios", icon: Trophy },
       ]}
       actions={
-        <div className="flex items-center gap-2">
-          {isSystemAdmin && (
+        isSystemAdmin ? (
+          <div className="flex items-center gap-2">
             <Button size="sm" className="gap-2" onClick={() => setCreateTournamentOpen(true)}>
               <Plus className="h-4 w-4" />
               Novo torneio
             </Button>
-          )}
-          <Link to="/admin">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Shield className="h-4 w-4" />
-              Sistema
-            </Button>
-          </Link>
-        </div>
+            <Link to="/admin">
+              <Button variant="outline" size="sm" className="gap-2">
+                <Shield className="h-4 w-4" />
+                Sistema
+              </Button>
+            </Link>
+          </div>
+        ) : undefined
       }
       >
         <PageContent className="max-w-6xl space-y-6">
@@ -1159,15 +1160,17 @@ const AdminTournament = () => {
           description="Lista, detalhes, times, jogos, classificação, transferências e premiação"
         >
           <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as TournamentMainTab)}>
-            <TabsList className="grid w-full grid-cols-2 gap-1 md:grid-cols-7">
-              <TabsTrigger value="lista">Lista de Torneios</TabsTrigger>
-              <TabsTrigger value="detalhes">Detalhes do Torneio</TabsTrigger>
-              <TabsTrigger value="times">Times</TabsTrigger>
-              <TabsTrigger value="jogos">Jogos</TabsTrigger>
-              <TabsTrigger value="classificacao">Classificação / Estatísticas</TabsTrigger>
-              <TabsTrigger value="transferencias">Transferências</TabsTrigger>
-              <TabsTrigger value="premiacao">Premiação</TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto pb-2">
+              <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-lg p-1">
+                <TabsTrigger className="whitespace-nowrap" value="lista">Lista de Torneios</TabsTrigger>
+                <TabsTrigger className="whitespace-nowrap" value="detalhes">Detalhes do Torneio</TabsTrigger>
+                <TabsTrigger className="whitespace-nowrap" value="times">Times</TabsTrigger>
+                <TabsTrigger className="whitespace-nowrap" value="jogos">Jogos</TabsTrigger>
+                <TabsTrigger className="whitespace-nowrap" value="classificacao">Classificação / Estatísticas</TabsTrigger>
+                <TabsTrigger className="whitespace-nowrap" value="transferencias">Transferências</TabsTrigger>
+                <TabsTrigger className="whitespace-nowrap" value="premiacao">Premiação</TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="lista" className="space-y-4">
               <div className="grid gap-3 md:grid-cols-3">
