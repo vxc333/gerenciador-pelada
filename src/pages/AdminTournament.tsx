@@ -150,7 +150,6 @@ const AdminTournament = () => {
   const [profilesByUser, setProfilesByUser] = useState<Record<string, ProfileRow>>({});
   const [activeLinksByTournament, setActiveLinksByTournament] = useState<Record<string, LinkRow[]>>({});
   const [transferEventsByTournament, setTransferEventsByTournament] = useState<Record<string, TransferEventRow[]>>({});
-  const [adminByTournament, setAdminByTournament] = useState<Record<string, boolean>>({});
   const [memberByTournament, setMemberByTournament] = useState<Record<string, boolean>>({});
   const [transferDraftByTournament, setTransferDraftByTournament] = useState<Record<string, TransferDraftState>>({});
   const [runningTransferForTournament, setRunningTransferForTournament] = useState<string | null>(null);
@@ -243,17 +242,10 @@ const AdminTournament = () => {
 
     const memberMap: Record<string, boolean> = {};
     unique.forEach((tournament) => {
-      memberMap[tournament.id] =
-        hasSystemAdminRole || adminTournamentIds.has(tournament.id) || participantTournamentIds.has(tournament.id);
-    });
-
-    const adminMap: Record<string, boolean> = {};
-    unique.forEach((tournament) => {
-      adminMap[tournament.id] = hasSystemAdminRole || tournament.created_by === user.id || adminTournamentIds.has(tournament.id);
+      memberMap[tournament.id] = participantTournamentIds.has(tournament.id);
     });
 
     setMemberByTournament(memberMap);
-    setAdminByTournament(adminMap);
 
     setTournaments(unique);
 
@@ -269,24 +261,24 @@ const AdminTournament = () => {
       return;
     }
 
-    const adminVisibleTournamentIds = tournamentIds.filter((id) => adminMap[id]);
+    const memberVisibleTournamentIds = tournamentIds.filter((id) => memberMap[id]);
 
     const [teamsRes, matchesRes, resultsRes, linksRes, transfersRes] = await Promise.all([
       supabase.from("tournament_teams").select("*").in("tournament_id", tournamentIds),
       supabase.from("tournament_matches").select("*").in("tournament_id", tournamentIds).order("created_at", { ascending: true }),
       supabase.from("tournament_match_results").select("*").in("tournament_id", tournamentIds),
-      adminVisibleTournamentIds.length > 0
+      memberVisibleTournamentIds.length > 0
         ? supabase
             .from("tournament_player_team_links")
             .select("*")
-            .in("tournament_id", adminVisibleTournamentIds)
+        .in("tournament_id", memberVisibleTournamentIds)
             .eq("status", "ATIVO")
         : Promise.resolve({ data: [] as LinkRow[] }),
-      adminVisibleTournamentIds.length > 0
+      memberVisibleTournamentIds.length > 0
         ? supabase
             .from("tournament_transfer_events")
             .select("*")
-            .in("tournament_id", adminVisibleTournamentIds)
+        .in("tournament_id", memberVisibleTournamentIds)
             .order("created_at", { ascending: false })
         : Promise.resolve({ data: [] as TransferEventRow[] }),
     ]);
@@ -863,11 +855,11 @@ const AdminTournament = () => {
     await loadData();
   };
 
-  const isTournamentAdmin = useCallback(
+  const isTournamentMember = useCallback(
     (tournamentId: string) => {
-      return !!adminByTournament[tournamentId];
+      return !!memberByTournament[tournamentId];
     },
-    [adminByTournament]
+    [memberByTournament]
   );
 
   const isTransferWindowOpen = useCallback((tournament: TournamentRow) => {
@@ -885,7 +877,7 @@ const AdminTournament = () => {
 
   const executeTransfer = async (tournament: TournamentRow) => {
     if (!user) return;
-    if (!isTournamentAdmin(tournament.id)) {
+    if (!isTournamentMember(tournament.id)) {
       toast.error("Sem permissão para realizar transferências");
       return;
     }
@@ -1224,7 +1216,7 @@ const AdminTournament = () => {
                 <div className="grid gap-3 md:grid-cols-2">
                   {filteredTournaments.map((tournament) => {
                     const teamsCount = (teamsByTournament[tournament.id] || []).length;
-                    const canManage = isTournamentAdmin(tournament.id);
+                    const canOperate = isTournamentMember(tournament.id);
                     const canRegister = tournament.status === "INSCRICOES_ABERTAS";
                     return (
                       <div key={tournament.id} className="rounded-lg border border-border/50 p-4">
@@ -1261,7 +1253,7 @@ const AdminTournament = () => {
                           >
                             Inscrever time
                           </Button>
-                          {canManage && <Badge variant="outline">Admin</Badge>}
+                          {canOperate && <Badge variant="outline">Membro</Badge>}
                         </div>
                       </div>
                     );
@@ -1298,18 +1290,18 @@ const AdminTournament = () => {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span>
-                              <Button size="sm" variant="outline" disabled={!isTournamentAdmin(selectedTournament.id)}>
+                              <Button size="sm" variant="outline" disabled={!isTournamentMember(selectedTournament.id)}>
                                 Editar torneio
                               </Button>
                             </span>
                           </TooltipTrigger>
-                          {!isTournamentAdmin(selectedTournament.id) && <TooltipContent>Somente admin pode editar.</TooltipContent>}
+                          {!isTournamentMember(selectedTournament.id) && <TooltipContent>Somente membros podem editar.</TooltipContent>}
                         </Tooltip>
 
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={!isTournamentAdmin(selectedTournament.id)}
+                          disabled={!isTournamentMember(selectedTournament.id)}
                           onClick={() =>
                             changeTournamentStatus(
                               selectedTournament,
@@ -1323,7 +1315,7 @@ const AdminTournament = () => {
                         <Button
                           size="sm"
                           variant="secondary"
-                          disabled={!isTournamentAdmin(selectedTournament.id) || generatingForTournament === selectedTournament.id}
+                          disabled={!isTournamentMember(selectedTournament.id) || generatingForTournament === selectedTournament.id}
                           onClick={() => createDrawAndFixtures(selectedTournament)}
                         >
                           Gerar tabela
@@ -1336,10 +1328,10 @@ const AdminTournament = () => {
                             className="hidden"
                             type="file"
                             accept="image/png,image/jpeg,image/webp"
-                            disabled={!isTournamentAdmin(selectedTournament.id)}
+                            disabled={!isTournamentMember(selectedTournament.id)}
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              if (!file || !isTournamentAdmin(selectedTournament.id)) return;
+                              if (!file || !isTournamentMember(selectedTournament.id)) return;
                               openImagePreview(file, "TOURNAMENT", selectedTournament.id);
                               e.currentTarget.value = "";
                             }}
@@ -1349,7 +1341,7 @@ const AdminTournament = () => {
                         <Button
                           size="sm"
                           variant="destructive"
-                          disabled={!isTournamentAdmin(selectedTournament.id)}
+                          disabled={!isTournamentMember(selectedTournament.id)}
                           onClick={() => changeTournamentStatus(selectedTournament, "FINALIZADO")}
                         >
                           Encerrar torneio
@@ -1407,7 +1399,7 @@ const AdminTournament = () => {
                                 className="hidden"
                                 type="file"
                                 accept="image/png,image/jpeg,image/webp"
-                                disabled={team.owner_user_id !== user.id && !isTournamentAdmin(selectedTournament.id)}
+                                disabled={!isTournamentMember(selectedTournament.id)}
                                 onChange={(e) => {
                                   const file = e.target.files?.[0];
                                   if (!file) return;
@@ -1452,7 +1444,7 @@ const AdminTournament = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={!isTournamentAdmin(selectedTournament.id)}
+                              disabled={!isTournamentMember(selectedTournament.id)}
                               onClick={() => openMatchEditor(selectedTournament, match)}
                             >
                               <PlayCircle className="mr-1 h-3.5 w-3.5" />
@@ -1461,7 +1453,7 @@ const AdminTournament = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={!isTournamentAdmin(selectedTournament.id) || isLocked}
+                              disabled={!isTournamentMember(selectedTournament.id) || isLocked}
                               onClick={() => openMatchEditor(selectedTournament, match)}
                             >
                               Editar resultado
@@ -1555,7 +1547,7 @@ const AdminTournament = () => {
                         freePlayers.map((player) => (
                           <div key={player.id} className="mb-1 flex items-center justify-between rounded bg-muted/20 px-2 py-1 text-xs">
                             <span>{profilesByUser[player.user_id]?.display_name || "Jogador"}</span>
-                            <Button size="sm" variant="outline" disabled={!isTournamentAdmin(selectedTournament.id)}>Adicionar ao time</Button>
+                            <Button size="sm" variant="outline" disabled={!isTournamentMember(selectedTournament.id)}>Adicionar ao time</Button>
                           </div>
                         ))
                       )}
@@ -1572,7 +1564,7 @@ const AdminTournament = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={!isTournamentAdmin(selectedTournament.id)}
+                              disabled={!isTournamentMember(selectedTournament.id)}
                               onClick={() =>
                                 setTransferDraftByTournament((prev) => ({
                                   ...prev,
@@ -1588,7 +1580,7 @@ const AdminTournament = () => {
                     </div>
                   </div>
 
-                  {isTournamentAdmin(selectedTournament.id) && (
+                  {isTournamentMember(selectedTournament.id) && (
                     <>
                       <div className="grid gap-3 md:grid-cols-3">
                         <div className="space-y-2">
