@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowRightLeft, ImagePlus, LayoutDashboard, PlayCircle, Save, Shield, Swords, Trophy, Upload } from "lucide-react";
+import { ArrowRightLeft, Award, BarChart3, CalendarDays, CheckCircle2, ImagePlus, LayoutDashboard, PlayCircle, Save, Shield, Swords, Trophy, Upload, Users } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Database, Tables } from "@/integrations/supabase/types";
 import { AdminShell } from "@/components/layout/AdminShell";
 import { PageContent, PageSectionCard } from "@/components/layout/PageLayout";
 import { PageState } from "@/components/layout/PageState";
+import { TournamentCreateFormCard, type TournamentCreateFormValues } from "../components/admin/TournamentCreateFormCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -36,18 +37,31 @@ import {
   type CardEvent,
   type GoalEvent,
   type TeamSeed,
-  type TieBreakerCriterion,
   type TournamentStatus,
   type TournamentType,
 } from "@/modules/tournaments";
 
-type TournamentRow = Tables<"tournaments">;
+type TournamentRow = Tables<"tournaments"> & { group_stage_groups_count: number | null };
 type TeamRow = Tables<"tournament_teams">;
 type MatchRow = Tables<"tournament_matches">;
 type MatchResultRow = Tables<"tournament_match_results">;
 type LinkRow = Tables<"tournament_player_team_links">;
 type ProfileRow = Tables<"user_profiles">;
 type TransferEventRow = Tables<"tournament_transfer_events">;
+type TeamPlayerRow = Tables<"tournament_team_players">;
+type PlayerStatsRow = Tables<"tournament_player_stats">;
+type AchievementRow = Tables<"tournament_achievements">;
+type AchievementCatalogRow = Tables<"tournament_achievement_catalog">;
+type RankingRow = Database["public"]["Views"]["v_tournament_rankings"]["Row"];
+
+type TournamentMainTab =
+  | "lista"
+  | "detalhes"
+  | "times"
+  | "jogos"
+  | "classificacao"
+  | "transferencias"
+  | "premiacao";
 
 const statusLabel: Record<TournamentStatus, string> = {
   DRAFT: "Rascunho",
@@ -69,28 +83,6 @@ const orderedStatus: TournamentStatus[] = [
   "ARQUIVADO",
 ];
 
-interface CreateTournamentForm {
-  nome: string;
-  descricao: string;
-  tipoTorneio: TournamentType;
-  limiteDeTimes: boolean;
-  quantidadeMaximaDeTimes: string;
-  torneioOficial: boolean;
-  idaEVolta: boolean;
-  acumulacaoCartoes: boolean;
-  criteriosDesempate: TieBreakerCriterion[];
-  minimoJogadores: string;
-}
-
-const tieBreakerOptions: Array<{ value: TieBreakerCriterion; label: string }> = [
-  { value: "PONTOS", label: "Pontos" },
-  { value: "SALDO_GOLS", label: "Saldo de gols" },
-  { value: "GOLS_PRO", label: "Gols pró" },
-  { value: "CONFRONTO_DIRETO", label: "Confronto direto" },
-  { value: "CARTOES", label: "Disciplina (cartões)" },
-  { value: "SORTEIO", label: "Sorteio" },
-];
-
 interface MatchEditorState {
   match: MatchRow;
   currentResult: MatchResultRow | null;
@@ -108,10 +100,29 @@ interface TransferDraftState {
   reason: string;
 }
 
-const defaultForm: CreateTournamentForm = {
+interface TeamRegistrationWizardState {
+  open: boolean;
+  step: 1 | 2 | 3;
+  existingTeamId: string;
+  newTeamName: string;
+  inviteSearch: string;
+  invites: Array<{ user_id: string; display_name: string; status: "PENDENTE" | "ACEITO" | "RECUSADO" }>;
+}
+
+interface ImagePreviewState {
+  open: boolean;
+  objectUrl: string;
+  file: File | null;
+  tournamentId: string;
+  teamId: string | null;
+  scope: "TOURNAMENT" | "TEAM";
+}
+
+const defaultForm: TournamentCreateFormValues = {
   nome: "",
   descricao: "",
   tipoTorneio: "LIGA",
+  quantidadeGrupos: "4",
   limiteDeTimes: false,
   quantidadeMaximaDeTimes: "",
   torneioOficial: false,
@@ -144,7 +155,7 @@ const AdminTournament = () => {
   const [transferDraftByTournament, setTransferDraftByTournament] = useState<Record<string, TransferDraftState>>({});
   const [runningTransferForTournament, setRunningTransferForTournament] = useState<string | null>(null);
 
-  const [form, setForm] = useState<CreateTournamentForm>(defaultForm);
+  const [form, setForm] = useState<TournamentCreateFormValues>(defaultForm);
   const [creating, setCreating] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [uploadingImageForTournament, setUploadingImageForTournament] = useState<string | null>(null);
@@ -152,6 +163,34 @@ const AdminTournament = () => {
 
   const [editorState, setEditorState] = useState<MatchEditorState | null>(null);
   const [savingResult, setSavingResult] = useState(false);
+  const [mainTab, setMainTab] = useState<TournamentMainTab>("lista");
+  const [selectedTournamentId, setSelectedTournamentId] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<string>("todos");
+  const [filterType, setFilterType] = useState<string>("todos");
+  const [filterScope, setFilterScope] = useState<"ativos" | "encerrados" | "todos">("ativos");
+  const [loadingSelectedData, setLoadingSelectedData] = useState(false);
+  const [selectedTeamPlayers, setSelectedTeamPlayers] = useState<TeamPlayerRow[]>([]);
+  const [selectedStats, setSelectedStats] = useState<PlayerStatsRow[]>([]);
+  const [selectedRankings, setSelectedRankings] = useState<RankingRow[]>([]);
+  const [selectedAchievements, setSelectedAchievements] = useState<AchievementRow[]>([]);
+  const [selectedAchievementCatalog, setSelectedAchievementCatalog] = useState<AchievementCatalogRow[]>([]);
+  const [wizard, setWizard] = useState<TeamRegistrationWizardState>({
+    open: false,
+    step: 1,
+    existingTeamId: "",
+    newTeamName: "",
+    inviteSearch: "",
+    invites: [],
+  });
+  const [submittingWizard, setSubmittingWizard] = useState(false);
+  const [imagePreview, setImagePreview] = useState<ImagePreviewState>({
+    open: false,
+    objectUrl: "",
+    file: null,
+    tournamentId: "",
+    teamId: null,
+    scope: "TOURNAMENT",
+  });
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -314,6 +353,51 @@ const AdminTournament = () => {
     }
   }, [user, profileChecked, loadData]);
 
+  useEffect(() => {
+    if (!selectedTournamentId && tournaments.length > 0) {
+      setSelectedTournamentId(tournaments[0].id);
+    }
+  }, [selectedTournamentId, tournaments]);
+
+  const filteredTournaments = useMemo(() => {
+    return tournaments.filter((tournament) => {
+      if (filterStatus !== "todos" && tournament.status !== filterStatus) return false;
+      if (filterType !== "todos" && tournament.tournament_type !== filterType) return false;
+      const isClosed = tournament.status === "FINALIZADO" || tournament.status === "ARQUIVADO";
+      if (filterScope === "ativos" && isClosed) return false;
+      if (filterScope === "encerrados" && !isClosed) return false;
+      return true;
+    });
+  }, [filterScope, filterStatus, filterType, tournaments]);
+
+  const selectedTournament = useMemo(() => {
+    return tournaments.find((tournament) => tournament.id === selectedTournamentId) || null;
+  }, [selectedTournamentId, tournaments]);
+
+  useEffect(() => {
+    if (!selectedTournamentId) return;
+
+    const loadSelected = async () => {
+      setLoadingSelectedData(true);
+      const [teamPlayersRes, statsRes, rankingsRes, achievementsRes, catalogRes] = await Promise.all([
+        supabase.from("tournament_team_players").select("*").eq("tournament_id", selectedTournamentId),
+        supabase.from("tournament_player_stats").select("*").eq("tournament_id", selectedTournamentId),
+        supabase.from("v_tournament_rankings").select("*").eq("tournament_id", selectedTournamentId),
+        supabase.from("tournament_achievements").select("*").eq("tournament_id", selectedTournamentId),
+        supabase.from("tournament_achievement_catalog").select("*").eq("tournament_id", selectedTournamentId),
+      ]);
+
+      setSelectedTeamPlayers((teamPlayersRes.data || []) as TeamPlayerRow[]);
+      setSelectedStats((statsRes.data || []) as PlayerStatsRow[]);
+      setSelectedRankings((rankingsRes.data || []) as RankingRow[]);
+      setSelectedAchievements((achievementsRes.data || []) as AchievementRow[]);
+      setSelectedAchievementCatalog((catalogRes.data || []) as AchievementCatalogRow[]);
+      setLoadingSelectedData(false);
+    };
+
+    void loadSelected();
+  }, [selectedTournamentId]);
+
   const createTournament = async () => {
     if (!user) return;
     if (!form.nome.trim()) {
@@ -325,6 +409,14 @@ const AdminTournament = () => {
     if (Number.isNaN(minPlayers) || minPlayers < 1) {
       toast.error("Mínimo de jogadores inválido");
       return;
+    }
+
+    const groupsCount = Number(form.quantidadeGrupos || "0");
+    if (form.tipoTorneio === "GRUPOS_COM_MATA_MATA") {
+      if (Number.isNaN(groupsCount) || groupsCount < 2) {
+        toast.error("Quantidade de grupos deve ser no mínimo 2");
+        return;
+      }
     }
 
     if (form.limiteDeTimes) {
@@ -353,6 +445,7 @@ const AdminTournament = () => {
       max_teams: form.limiteDeTimes ? Number(form.quantidadeMaximaDeTimes) : null,
       is_official: form.torneioOficial,
       round_trip: form.idaEVolta,
+      group_stage_groups_count: form.tipoTorneio === "GRUPOS_COM_MATA_MATA" ? groupsCount : null,
       tie_breaker_criteria: tieBreakerCriteria,
       card_accumulation: form.acumulacaoCartoes,
       registration_min_players: minPlayers,
@@ -414,7 +507,7 @@ const AdminTournament = () => {
       tipoTorneio: tournament.tournament_type as TournamentType,
       teams: teamSeeds,
       seedEnabled: true,
-      groupCount: 4,
+      groupCount: tournament.group_stage_groups_count || 4,
     });
 
     if (fixtures.length === 0) {
@@ -524,6 +617,106 @@ const AdminTournament = () => {
 
     toast.success("Imagem do torneio atualizada com versionamento");
     await loadData();
+  };
+
+  const uploadTeamImage = async (tournament: TournamentRow, team: TeamRow, file: File) => {
+    if (!user) return;
+
+    const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+    setUploadingImageForTournament(tournament.id);
+
+    const { data: latestVersionRow } = await supabase
+      .from("tournament_file_versions")
+      .select("file_version")
+      .eq("tournament_id", tournament.id)
+      .eq("file_scope", "TEAM_IMAGE")
+      .eq("team_id", team.id)
+      .order("file_version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const nextVersion = (latestVersionRow?.file_version || 0) + 1;
+    const filePath = `tournaments/${tournament.id}/teams/${team.id}/v${nextVersion}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("tournament-media")
+      .upload(filePath, file, { upsert: false, contentType: file.type });
+
+    if (uploadError) {
+      setUploadingImageForTournament(null);
+      toast.error(`Falha no upload do escudo: ${uploadError.message}`);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage.from("tournament-media").getPublicUrl(filePath);
+
+    const [{ error: versionError }, { error: teamError }] = await Promise.all([
+      supabase.from("tournament_file_versions").insert({
+        tournament_id: tournament.id,
+        file_scope: "TEAM_IMAGE",
+        team_id: team.id,
+        storage_path: filePath,
+        file_version: nextVersion,
+        uploaded_by: user.id,
+      }),
+      supabase
+        .from("tournament_teams")
+        .update({ image_url: urlData.publicUrl, image_version: nextVersion })
+        .eq("id", team.id),
+    ]);
+
+    setUploadingImageForTournament(null);
+
+    if (versionError || teamError) {
+      toast.error(`Erro ao salvar versão do escudo: ${versionError?.message || teamError?.message}`);
+      return;
+    }
+
+    toast.success("Escudo do time atualizado");
+    await loadData();
+  };
+
+  const validateImageFile = (file: File): string | null => {
+    const allowed = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowed.includes(file.type)) return "Formato inválido. Use PNG, JPG ou WEBP.";
+    const maxBytes = 3 * 1024 * 1024;
+    if (file.size > maxBytes) return "Arquivo maior que 3MB.";
+    return null;
+  };
+
+  const openImagePreview = (
+    file: File,
+    scope: "TOURNAMENT" | "TEAM",
+    tournamentId: string,
+    teamId: string | null = null
+  ) => {
+    const validation = validateImageFile(file);
+    if (validation) {
+      toast.error(validation);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setImagePreview({
+      open: true,
+      objectUrl,
+      file,
+      scope,
+      tournamentId,
+      teamId,
+    });
+  };
+
+  const closeImagePreview = () => {
+    if (imagePreview.objectUrl) URL.revokeObjectURL(imagePreview.objectUrl);
+    setImagePreview({
+      open: false,
+      objectUrl: "",
+      file: null,
+      tournamentId: "",
+      teamId: null,
+      scope: "TOURNAMENT",
+    });
   };
 
   const teamNameById = useCallback(
@@ -778,6 +971,137 @@ const AdminTournament = () => {
     await loadData();
   };
 
+  const addInviteToWizard = async () => {
+    if (!wizard.inviteSearch.trim()) return;
+    const search = wizard.inviteSearch.trim();
+
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("user_id,display_name")
+      .ilike("display_name", `%${search}%`)
+      .maybeSingle();
+
+    if (!profile) {
+      toast.error("Jogador não encontrado pelo nome informado");
+      return;
+    }
+
+    if (wizard.invites.some((invite) => invite.user_id === profile.user_id)) {
+      toast.error("Jogador já adicionado no convite");
+      return;
+    }
+
+    setWizard((prev) => ({
+      ...prev,
+      inviteSearch: "",
+      invites: [
+        ...prev.invites,
+        { user_id: profile.user_id, display_name: profile.display_name, status: "PENDENTE" },
+      ],
+    }));
+  };
+
+  const submitTeamRegistrationWizard = async () => {
+    if (!user || !selectedTournament) return;
+    if (selectedTournament.status !== "INSCRICOES_ABERTAS") {
+      toast.error("Inscrições não estão abertas");
+      return;
+    }
+
+    if (!wizard.existingTeamId && !wizard.newTeamName.trim()) {
+      toast.error("Selecione um time existente ou informe um novo time");
+      return;
+    }
+
+    setSubmittingWizard(true);
+
+    let teamId = wizard.existingTeamId;
+    if (!teamId) {
+      const { data: createdTeam, error: createTeamError } = await supabase
+        .from("tournament_teams")
+        .insert({
+          tournament_id: selectedTournament.id,
+          owner_user_id: user.id,
+          name: wizard.newTeamName.trim(),
+          min_players_required: selectedTournament.registration_min_players,
+          status: "PENDENTE",
+        })
+        .select("id")
+        .single();
+
+      if (createTeamError || !createdTeam) {
+        setSubmittingWizard(false);
+        toast.error(`Erro ao criar time: ${createTeamError?.message || "falha"}`);
+        return;
+      }
+
+      teamId = createdTeam.id;
+    }
+
+    if (wizard.invites.length > 0) {
+      const payload = wizard.invites.map((invite) => ({
+        tournament_team_id: teamId,
+        tournament_id: selectedTournament.id,
+        user_id: invite.user_id,
+        invited_by: user.id,
+        invite_status: "PENDENTE" as const,
+      }));
+
+      const { error: inviteError } = await supabase.from("tournament_team_players").insert(payload);
+      if (inviteError) {
+        setSubmittingWizard(false);
+        toast.error(`Erro ao enviar convites: ${inviteError.message}`);
+        return;
+      }
+    }
+
+    setSubmittingWizard(false);
+    setWizard({
+      open: false,
+      step: 1,
+      existingTeamId: "",
+      newTeamName: "",
+      inviteSearch: "",
+      invites: [],
+    });
+
+    toast.success("Inscrição enviada com sucesso. O time só confirma após todos aceitarem.");
+    await loadData();
+  };
+
+  const selectedTeams = useMemo(
+    () => (selectedTournament ? teamsByTournament[selectedTournament.id] || [] : []),
+    [selectedTournament, teamsByTournament]
+  );
+  const selectedMatches = useMemo(
+    () => (selectedTournament ? matchesByTournament[selectedTournament.id] || [] : []),
+    [matchesByTournament, selectedTournament]
+  );
+  const selectedLinks = useMemo(
+    () => (selectedTournament ? activeLinksByTournament[selectedTournament.id] || [] : []),
+    [activeLinksByTournament, selectedTournament]
+  );
+  const selectedTransferEvents = useMemo(
+    () => (selectedTournament ? transferEventsByTournament[selectedTournament.id] || [] : []),
+    [selectedTournament, transferEventsByTournament]
+  );
+  const selectedTransferDraft = selectedTournament
+    ? transferDraftByTournament[selectedTournament.id] || { linkId: "", toTeamId: "", reason: "" }
+    : { linkId: "", toTeamId: "", reason: "" };
+
+  const freePlayers = useMemo(() => {
+    if (!selectedTournament) return [] as TeamPlayerRow[];
+    const linkedUsers = new Set(selectedLinks.map((link) => link.user_id));
+    return selectedTeamPlayers.filter((player) => player.invite_status === "ACEITO" && !linkedUsers.has(player.user_id));
+  }, [selectedLinks, selectedTeamPlayers, selectedTournament]);
+
+  const transferCandidates = useMemo(() => {
+    return selectedLinks.map((link) => ({
+      link,
+      name: profilesByUser[link.user_id]?.display_name || "Jogador",
+    }));
+  }, [profilesByUser, selectedLinks]);
+
   if (loading || !profileChecked) return null;
   if (!user) return <Navigate to="/auth" replace />;
   if (!hasProfileName) return <Navigate to="/?complete-profile=1" replace />;
@@ -818,446 +1142,711 @@ const AdminTournament = () => {
       >
         <PageContent className="max-w-6xl space-y-6">
         {isSystemAdmin && (
-        <PageSectionCard
-          title="CRIAR TORNEIO"
-          description="Somente admins podem alterar regras, estados, sorteio/tabela e resultados"
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <Label>Nome</Label>
-              <Input value={form.nome} onChange={(e) => setForm((prev) => ({ ...prev, nome: e.target.value }))} />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <Label>Descrição</Label>
-              <Textarea value={form.descricao} onChange={(e) => setForm((prev) => ({ ...prev, descricao: e.target.value }))} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Tipo de torneio</Label>
-              <Select
-                value={form.tipoTorneio}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, tipoTorneio: value as TournamentType }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="LIGA">Liga</SelectItem>
-                  <SelectItem value="MATA_MATA">Mata-mata</SelectItem>
-                  <SelectItem value="GRUPOS_COM_MATA_MATA">Grupos + mata-mata</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Mínimo de jogadores por time</Label>
-              <Input
-                type="number"
-                min={1}
-                value={form.minimoJogadores}
-                onChange={(e) => setForm((prev) => ({ ...prev, minimoJogadores: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <Label>Critérios de desempate (seleção controlada)</Label>
-              <div className="grid gap-2 rounded-md border border-border/60 bg-muted/20 p-3 sm:grid-cols-2">
-                {tieBreakerOptions.map((option) => {
-                  const checked = form.criteriosDesempate.includes(option.value);
-                  return (
-                    <label key={option.value} className="flex items-center gap-2 text-sm text-foreground">
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(isChecked) => {
-                          setForm((prev) => {
-                            if (isChecked) {
-                              if (prev.criteriosDesempate.includes(option.value)) return prev;
-                              return {
-                                ...prev,
-                                criteriosDesempate: [...prev.criteriosDesempate, option.value],
-                              };
-                            }
-
-                            return {
-                              ...prev,
-                              criteriosDesempate: prev.criteriosDesempate.filter((item) => item !== option.value),
-                            };
-                          });
-                        }}
-                      />
-                      {option.label}
-                    </label>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                A ordem dos critérios selecionados é a ordem de aplicação no desempate.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Checkbox
-                id="limite-times"
-                checked={form.limiteDeTimes}
-                onCheckedChange={(checked) => setForm((prev) => ({ ...prev, limiteDeTimes: !!checked }))}
-              />
-              <Label htmlFor="limite-times">Limite de times</Label>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Qtd máxima de times</Label>
-              <Input
-                type="number"
-                min={2}
-                disabled={!form.limiteDeTimes}
-                value={form.quantidadeMaximaDeTimes}
-                onChange={(e) => setForm((prev) => ({ ...prev, quantidadeMaximaDeTimes: e.target.value }))}
-              />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Checkbox
-                id="torneio-oficial"
-                checked={form.torneioOficial}
-                onCheckedChange={(checked) => setForm((prev) => ({ ...prev, torneioOficial: !!checked }))}
-              />
-              <Label htmlFor="torneio-oficial">Torneio oficial</Label>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Checkbox
-                id="ida-volta"
-                checked={form.idaEVolta}
-                onCheckedChange={(checked) => setForm((prev) => ({ ...prev, idaEVolta: !!checked }))}
-              />
-              <Label htmlFor="ida-volta">Ida e volta</Label>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Checkbox
-                id="cartoes"
-                checked={form.acumulacaoCartoes}
-                onCheckedChange={(checked) => setForm((prev) => ({ ...prev, acumulacaoCartoes: !!checked }))}
-              />
-              <Label htmlFor="cartoes">Acumulação de cartões</Label>
-            </div>
-          </div>
-
-          <div className="mt-4 flex justify-end">
-            <Button onClick={createTournament} disabled={creating} className="gap-2">
-              <Trophy className="h-4 w-4" />
-              {creating ? "Criando..." : "Criar torneio"}
-            </Button>
-          </div>
-        </PageSectionCard>
+          <TournamentCreateFormCard
+            form={form}
+            creating={creating}
+            setForm={setForm}
+            onCreate={createTournament}
+          />
         )}
 
         <PageSectionCard
           title="TORNEIOS"
-          description="Estado, tabela automática, resultados e upload de imagem versionado"
+          description="Lista, detalhes, times, jogos, classificação, transferências e premiação"
         >
-          <div className="space-y-4">
-            {tournaments.length === 0 && <p className="text-sm text-muted-foreground">Nenhum torneio encontrado.</p>}
+          <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as TournamentMainTab)}>
+            <TabsList className="grid w-full grid-cols-2 gap-1 md:grid-cols-7">
+              <TabsTrigger value="lista">Lista de Torneios</TabsTrigger>
+              <TabsTrigger value="detalhes">Detalhes do Torneio</TabsTrigger>
+              <TabsTrigger value="times">Times</TabsTrigger>
+              <TabsTrigger value="jogos">Jogos</TabsTrigger>
+              <TabsTrigger value="classificacao">Classificação / Estatísticas</TabsTrigger>
+              <TabsTrigger value="transferencias">Transferências</TabsTrigger>
+              <TabsTrigger value="premiacao">Premiação</TabsTrigger>
+            </TabsList>
 
-            {tournaments.map((tournament) => {
-              const teams = teamsByTournament[tournament.id] || [];
-              const matches = matchesByTournament[tournament.id] || [];
-              const canManage = isTournamentAdmin(tournament.id);
-              const isMember = !!memberByTournament[tournament.id];
-              const transferDraft = transferDraftByTournament[tournament.id] || { linkId: "", toTeamId: "", reason: "" };
-              const transferEvents = transferEventsByTournament[tournament.id] || [];
-              const links = activeLinksByTournament[tournament.id] || [];
-              const transferWindowOpen = isTransferWindowOpen(tournament);
+            <TabsContent value="lista" className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1">
+                  <Label>Status</Label>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      {orderedStatus.map((status) => (
+                        <SelectItem key={`filter-${status}`} value={status}>{statusLabel[status]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Tipo</Label>
+                  <Select value={filterType} onValueChange={setFilterType}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="LIGA">Liga</SelectItem>
+                      <SelectItem value="MATA_MATA">Mata-mata</SelectItem>
+                      <SelectItem value="GRUPOS_COM_MATA_MATA">Grupos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Escopo</Label>
+                  <Select value={filterScope} onValueChange={(value) => setFilterScope(value as "ativos" | "encerrados" | "todos") }>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ativos">Ativos</SelectItem>
+                      <SelectItem value="encerrados">Encerrados</SelectItem>
+                      <SelectItem value="todos">Todos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
-              return (
-                <div key={tournament.id} className="rounded-lg border border-border/50 p-4">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-display text-xl tracking-wide text-foreground">{tournament.name}</h3>
-                        <Badge variant={statusVariant(tournament.status as TournamentStatus)}>
-                          {statusLabel[tournament.status as TournamentStatus]}
-                        </Badge>
-                        {tournament.is_official ? <Badge variant="outline">Oficial</Badge> : null}
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">{tournament.description || "Sem descrição"}</p>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Tipo: {tournament.tournament_type} • Times: {teams.length} • Jogos: {matches.length}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Acesso: {canManage ? "Administração" : isMember ? "Participante" : "Leitura"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <Tabs defaultValue="administracao" className="mt-4">
-                    <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="administracao">Administração</TabsTrigger>
-                      <TabsTrigger value="elenco">Elenco</TabsTrigger>
-                      <TabsTrigger value="transferencias">Transferências</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="administracao" className="space-y-3">
-                      {!canManage && (
-                        <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
-                          Você está vendo essa aba como participante. Ações administrativas ficam bloqueadas para seu perfil.
+              {filteredTournaments.length === 0 ? (
+                <div className="rounded-md border border-border/60 bg-muted/20 p-6 text-sm text-muted-foreground">
+                  Nenhum torneio encontrado com os filtros atuais.
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {filteredTournaments.map((tournament) => {
+                    const teamsCount = (teamsByTournament[tournament.id] || []).length;
+                    const canManage = isTournamentAdmin(tournament.id);
+                    const canRegister = tournament.status === "INSCRICOES_ABERTAS";
+                    return (
+                      <div key={tournament.id} className="rounded-lg border border-border/50 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">{tournament.name}</p>
+                            <p className="text-xs text-muted-foreground">{tournament.description || "Sem descrição"}</p>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              Tipo: {tournament.tournament_type} • Times: {teamsCount}/{tournament.max_teams || "∞"}
+                            </p>
+                          </div>
+                          <Badge variant={statusVariant(tournament.status as TournamentStatus)}>
+                            {statusLabel[tournament.status as TournamentStatus]}
+                          </Badge>
                         </div>
-                      )}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedTournamentId(tournament.id);
+                              setMainTab("detalhes");
+                            }}
+                          >
+                            Ver torneio
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={!canRegister}
+                            onClick={() => {
+                              setSelectedTournamentId(tournament.id);
+                              setWizard((prev) => ({ ...prev, open: true, step: 1 }));
+                            }}
+                          >
+                            Inscrever time
+                          </Button>
+                          {canManage && <Badge variant="outline">Admin</Badge>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </TabsContent>
 
-                      <div className="flex flex-wrap gap-2">
-                        <Select
-                          value={tournament.status}
-                          disabled={!canManage}
-                          onValueChange={(value) => changeTournamentStatus(tournament, value as TournamentStatus)}
-                        >
-                          <SelectTrigger className="w-56">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {orderedStatus.map((status) => (
-                              <SelectItem
-                                key={`${tournament.id}-${status}`}
-                                value={status}
-                                disabled={!canTransitionTournamentStatus(tournament.status as TournamentStatus, status)}
-                              >
-                                {statusLabel[status]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+            <TabsContent value="detalhes" className="space-y-4">
+              {!selectedTournament ? (
+                <div className="rounded-md border border-border/60 bg-muted/20 p-6 text-sm text-muted-foreground">Selecione um torneio na lista.</div>
+              ) : (
+                <>
+                  <div className="overflow-hidden rounded-lg border border-border/50">
+                    <div className="h-40 bg-muted">
+                      {selectedTournament.image_url ? (
+                        <img src={selectedTournament.image_url} alt="Banner" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Sem imagem do torneio</div>
+                      )}
+                    </div>
+                    <div className="space-y-2 p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-xl font-semibold text-foreground">{selectedTournament.name}</h3>
+                        <Badge variant={statusVariant(selectedTournament.status as TournamentStatus)}>
+                          {statusLabel[selectedTournament.status as TournamentStatus]}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{selectedTournament.description || "Sem descrição"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Tipo: {selectedTournament.tournament_type} • Vagas restantes: {Math.max((selectedTournament.max_teams || 9999) - selectedTeams.length, 0)}
+                      </p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Button size="sm" variant="outline" disabled={!isTournamentAdmin(selectedTournament.id)}>
+                                Editar torneio
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          {!isTournamentAdmin(selectedTournament.id) && <TooltipContent>Somente admin pode editar.</TooltipContent>}
+                        </Tooltip>
 
                         <Button
-                          variant="secondary"
-                          className="gap-2"
-                          disabled={
-                            !canManage ||
-                            tournament.status !== "INSCRICOES_ENCERRADAS" ||
-                            generatingForTournament === tournament.id
+                          size="sm"
+                          variant="outline"
+                          disabled={!isTournamentAdmin(selectedTournament.id)}
+                          onClick={() =>
+                            changeTournamentStatus(
+                              selectedTournament,
+                              selectedTournament.status === "INSCRICOES_ABERTAS" ? "INSCRICOES_ENCERRADAS" : "INSCRICOES_ABERTAS"
+                            )
                           }
-                          onClick={() => createDrawAndFixtures(tournament)}
                         >
-                          <Swords className="h-4 w-4" />
-                          {generatingForTournament === tournament.id ? "Gerando..." : "Gerar tabela"}
+                          {selectedTournament.status === "INSCRICOES_ABERTAS" ? "Fechar inscrições" : "Abrir inscrições"}
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={!isTournamentAdmin(selectedTournament.id) || generatingForTournament === selectedTournament.id}
+                          onClick={() => createDrawAndFixtures(selectedTournament)}
+                        >
+                          Gerar tabela
                         </Button>
 
                         <Label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
                           <ImagePlus className="h-4 w-4" />
-                          {uploadingImageForTournament === tournament.id ? "Enviando..." : "Imagem"}
+                          Imagem
                           <input
                             className="hidden"
                             type="file"
                             accept="image/png,image/jpeg,image/webp"
-                            disabled={!canManage}
+                            disabled={!isTournamentAdmin(selectedTournament.id)}
                             onChange={(e) => {
-                              if (!canManage) return;
                               const file = e.target.files?.[0];
-                              if (!file) return;
-                              void uploadTournamentImage(tournament, file);
+                              if (!file || !isTournamentAdmin(selectedTournament.id)) return;
+                              openImagePreview(file, "TOURNAMENT", selectedTournament.id);
                               e.currentTarget.value = "";
                             }}
                           />
                         </Label>
+
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={!isTournamentAdmin(selectedTournament.id)}
+                          onClick={() => changeTournamentStatus(selectedTournament, "FINALIZADO")}
+                        >
+                          Encerrar torneio
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          disabled={selectedTournament.status !== "INSCRICOES_ABERTAS"}
+                          onClick={() => setWizard((prev) => ({ ...prev, open: true, step: 1 }))}
+                        >
+                          Inscrever time
+                        </Button>
                       </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </TabsContent>
 
-                      {tournament.image_url ? (
-                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                          <Upload className="h-3.5 w-3.5" />
-                          imagem v{tournament.image_version}
-                        </div>
-                      ) : null}
-
-                      <div className="mt-2 grid gap-2 md:grid-cols-2">
-                        {matches.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">Sem jogos gerados.</p>
-                        ) : (
-                          matches.map((match) => {
-                            const result = resultsByMatch[match.id];
-                            const isLocked = result?.status === "VALIDADO";
-
-                            return (
-                              <div key={match.id} className="rounded-md border border-border/50 p-3">
-                                <p className="text-xs text-muted-foreground">
-                                  {match.phase}
-                                  {match.group_label ? ` • ${match.group_label}` : ""}
-                                  {match.round_number ? ` • rodada ${match.round_number}` : ""}
-                                </p>
-                                <p className="mt-1 text-sm font-medium text-foreground">
-                                  {teamNameById(tournament.id, match.home_team_id)} x {teamNameById(tournament.id, match.away_team_id)}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Status jogo: {match.status}
-                                  {result ? ` • Resultado: ${result.status}` : ""}
-                                </p>
-                                {result ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    Placar: {result.home_score} x {result.away_score}
-                                  </p>
-                                ) : null}
-                                <div className="mt-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="gap-2"
-                                    disabled={!canManage || isLocked}
-                                    onClick={() => openMatchEditor(tournament, match)}
-                                  >
-                                    <PlayCircle className="h-4 w-4" />
-                                    {!canManage ? "Sem permissão" : isLocked ? "Resultado validado" : "Lançar resultado"}
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="elenco" className="space-y-3">
-                      <div className="grid gap-2 md:grid-cols-2">
-                        {teams.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">Sem times cadastrados.</p>
-                        ) : (
-                          teams.map((team) => {
-                            const rosterCount = links.filter((link) => link.tournament_team_id === team.id).length;
-                            return (
-                              <div key={team.id} className="rounded-md border border-border/50 p-3">
-                                <p className="text-sm font-medium text-foreground">{team.name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Status: {team.status} • Dono: {profilesByUser[team.owner_user_id]?.display_name || "Usuário"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">Atletas ativos: {rosterCount}</p>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="transferencias" className="space-y-3">
-                      {!canManage ? (
-                        <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
-                          Apenas admins do torneio podem visualizar e lançar transferências.
-                        </div>
-                      ) : (
-                        <>
-                          <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
-                            Janela de transferências: {transferWindowOpen ? "aberta" : "fechada"}
+            <TabsContent value="times" className="space-y-4">
+              {!selectedTournament ? (
+                <p className="text-sm text-muted-foreground">Selecione um torneio na lista.</p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {selectedTeams.length === 0 ? (
+                    <div className="rounded-md border border-border/60 bg-muted/20 p-6 text-sm text-muted-foreground">Nenhum time inscrito.</div>
+                  ) : (
+                    selectedTeams.map((team) => {
+                      const roster = selectedLinks.filter((link) => link.tournament_team_id === team.id);
+                      return (
+                        <div key={team.id} className="rounded-md border border-border/50 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium text-foreground">{team.name}</p>
+                            <Badge variant="outline">{team.status}</Badge>
                           </div>
-
-                          <div className="grid gap-3 md:grid-cols-3">
-                            <div className="space-y-2">
-                              <Label>Jogador (vínculo atual)</Label>
-                              <Select
-                                value={transferDraft.linkId || "none"}
-                                onValueChange={(value) =>
-                                  setTransferDraftByTournament((prev) => ({
-                                    ...prev,
-                                    [tournament.id]: {
-                                      ...transferDraft,
-                                      linkId: value === "none" ? "" : value,
-                                    },
-                                  }))
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Selecione" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">Selecione</SelectItem>
-                                  {links.map((link) => (
-                                    <SelectItem key={link.id} value={link.id}>
-                                      {(profilesByUser[link.user_id]?.display_name || "Jogador")} • {teamNameById(tournament.id, link.tournament_team_id)}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label>Time de destino</Label>
-                              <Select
-                                value={transferDraft.toTeamId || "none"}
-                                onValueChange={(value) =>
-                                  setTransferDraftByTournament((prev) => ({
-                                    ...prev,
-                                    [tournament.id]: {
-                                      ...transferDraft,
-                                      toTeamId: value === "none" ? "" : value,
-                                    },
-                                  }))
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Selecione" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">Selecione</SelectItem>
-                                  {teams.map((team) => (
-                                    <SelectItem key={team.id} value={team.id}>
-                                      {team.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label>Motivo</Label>
-                              <Input
-                                value={transferDraft.reason}
-                                onChange={(e) =>
-                                  setTransferDraftByTournament((prev) => ({
-                                    ...prev,
-                                    [tournament.id]: {
-                                      ...transferDraft,
-                                      reason: e.target.value,
-                                    },
-                                  }))
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          <div className="flex justify-end">
-                            <Button
-                              className="gap-2"
-                              disabled={!transferWindowOpen || runningTransferForTournament === tournament.id}
-                              onClick={() => executeTransfer(tournament)}
-                            >
-                              <ArrowRightLeft className="h-4 w-4" />
-                              {runningTransferForTournament === tournament.id ? "Transferindo..." : "Executar transferência"}
-                            </Button>
-                          </div>
-
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Histórico de transferências</p>
-                            {transferEvents.length === 0 ? (
-                              <p className="text-xs text-muted-foreground">Nenhuma transferência registrada.</p>
+                          <p className="text-xs text-muted-foreground">Jogadores ativos: {roster.length}</p>
+                          <div className="mt-2 space-y-1">
+                            {roster.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">Sem elenco ativo.</p>
                             ) : (
-                              transferEvents.slice(0, 20).map((event) => (
-                                <div key={event.id} className="rounded-md border border-border/50 p-2 text-xs">
-                                  <p className="text-foreground">
-                                    {(profilesByUser[event.user_id]?.display_name || "Jogador")} • {teamNameById(tournament.id, event.from_team_id)} → {teamNameById(tournament.id, event.to_team_id)}
-                                  </p>
-                                  <p className="text-muted-foreground">
-                                    {event.reason || "Sem motivo"} • {new Date(event.created_at).toLocaleString("pt-BR")}
-                                  </p>
+                              roster.map((link) => (
+                                <div key={link.id} className="flex items-center justify-between rounded-md bg-muted/30 px-2 py-1 text-xs">
+                                  <span>{profilesByUser[link.user_id]?.display_name || "Jogador"}</span>
+                                  <span className="text-muted-foreground">{link.origin}</span>
                                 </div>
                               ))
                             )}
                           </div>
-                        </>
-                      )}
-                    </TabsContent>
-                  </Tabs>
+                          <div className="mt-2 flex gap-2">
+                            <Button size="sm" variant="outline" disabled={!isTransferWindowOpen(selectedTournament)}>Adicionar jogador</Button>
+                            <Button size="sm" variant="outline" disabled={!isTransferWindowOpen(selectedTournament)}>Substituir jogador</Button>
+                            <Label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-input px-2 py-1 text-xs">
+                              <Upload className="h-3.5 w-3.5" /> Escudo
+                              <input
+                                className="hidden"
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                disabled={team.owner_user_id !== user.id && !isTournamentAdmin(selectedTournament.id)}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  openImagePreview(file, "TEAM", selectedTournament.id, team.id);
+                                  e.currentTarget.value = "";
+                                }}
+                              />
+                            </Label>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="jogos" className="space-y-3">
+              {!selectedTournament ? (
+                <p className="text-sm text-muted-foreground">Selecione um torneio na lista.</p>
+              ) : (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {selectedMatches.length === 0 ? (
+                    <div className="rounded-md border border-border/60 bg-muted/20 p-6 text-sm text-muted-foreground">Sem jogos cadastrados.</div>
+                  ) : (
+                    selectedMatches.map((match) => {
+                      const result = resultsByMatch[match.id];
+                      const isLocked = result?.status === "VALIDADO";
+                      return (
+                        <div key={match.id} className="rounded-md border border-border/50 p-3">
+                          <p className="text-xs text-muted-foreground">
+                            <CalendarDays className="mr-1 inline h-3 w-3" />
+                            {match.phase}{match.group_label ? ` • ${match.group_label}` : ""}
+                          </p>
+                          <p className="text-sm font-medium text-foreground">
+                            {teamNameById(selectedTournament.id, match.home_team_id)} x {teamNameById(selectedTournament.id, match.away_team_id)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Status: {match.status} {result ? `• ${result.home_score} x ${result.away_score}` : ""}
+                          </p>
+                          <div className="mt-2 flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!isTournamentAdmin(selectedTournament.id)}
+                              onClick={() => openMatchEditor(selectedTournament, match)}
+                            >
+                              <PlayCircle className="mr-1 h-3.5 w-3.5" />
+                              Lançar resultado
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!isTournamentAdmin(selectedTournament.id) || isLocked}
+                              onClick={() => openMatchEditor(selectedTournament, match)}
+                            >
+                              Editar resultado
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="classificacao" className="space-y-3">
+              {loadingSelectedData ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : !selectedTournament ? (
+                <p className="text-sm text-muted-foreground">Selecione um torneio na lista.</p>
+              ) : (
+                <>
+                  <div className="rounded-md border border-border/50 p-3">
+                    <p className="mb-2 text-sm font-semibold text-foreground"><BarChart3 className="mr-1 inline h-4 w-4" /> Classificação</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-left text-muted-foreground">
+                            <th className="py-1">Jogador</th>
+                            <th className="py-1">Jogos</th>
+                            <th className="py-1">Gols</th>
+                            <th className="py-1">Assist.</th>
+                            <th className="py-1">Fair Play</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedStats.slice().sort((a, b) => b.goals - a.goals).map((row) => (
+                            <tr key={row.player_user_id} className="border-t border-border/40">
+                              <td className="py-1">{profilesByUser[row.player_user_id]?.display_name || "Jogador"}</td>
+                              <td className="py-1">{row.matches_played}</td>
+                              <td className="py-1">{row.goals}</td>
+                              <td className="py-1">{row.assists}</td>
+                              <td className="py-1">{row.fair_play_points}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <div className="rounded-md border border-border/50 p-3 text-xs">
+                      <p className="font-medium text-foreground">Artilharia</p>
+                      {selectedRankings.slice().sort((a, b) => (a.artillery_rank || 999) - (b.artillery_rank || 999)).slice(0, 5).map((row) => (
+                        <p key={`g-${row.player_user_id}`} className="text-muted-foreground">#{row.artillery_rank} {profilesByUser[row.player_user_id]?.display_name || "Jogador"}</p>
+                      ))}
+                    </div>
+                    <div className="rounded-md border border-border/50 p-3 text-xs">
+                      <p className="font-medium text-foreground">Assistências</p>
+                      {selectedRankings.slice().sort((a, b) => (a.assists_rank || 999) - (b.assists_rank || 999)).slice(0, 5).map((row) => (
+                        <p key={`a-${row.player_user_id}`} className="text-muted-foreground">#{row.assists_rank} {profilesByUser[row.player_user_id]?.display_name || "Jogador"}</p>
+                      ))}
+                    </div>
+                    <div className="rounded-md border border-border/50 p-3 text-xs">
+                      <p className="font-medium text-foreground">Fair Play</p>
+                      {selectedRankings.slice().sort((a, b) => (a.fair_play_rank || 999) - (b.fair_play_rank || 999)).slice(0, 5).map((row) => (
+                        <p key={`f-${row.player_user_id}`} className="text-muted-foreground">#{row.fair_play_rank} {profilesByUser[row.player_user_id]?.display_name || "Jogador"}</p>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="transferencias" className="space-y-3">
+              {!selectedTournament ? (
+                <p className="text-sm text-muted-foreground">Selecione um torneio na lista.</p>
+              ) : (
+                <>
+                  <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+                    Janela de transferências: {isTransferWindowOpen(selectedTournament) ? "aberta" : "fechada"}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-md border border-border/50 p-3">
+                      <p className="mb-2 text-sm font-medium text-foreground">Jogadores Livres</p>
+                      {freePlayers.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Nenhum jogador livre no momento.</p>
+                      ) : (
+                        freePlayers.map((player) => (
+                          <div key={player.id} className="mb-1 flex items-center justify-between rounded bg-muted/20 px-2 py-1 text-xs">
+                            <span>{profilesByUser[player.user_id]?.display_name || "Jogador"}</span>
+                            <Button size="sm" variant="outline" disabled={!isTournamentAdmin(selectedTournament.id)}>Adicionar ao time</Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="rounded-md border border-border/50 p-3">
+                      <p className="mb-2 text-sm font-medium text-foreground">Jogadores disponíveis para Transferência</p>
+                      {transferCandidates.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Nenhum jogador disponível.</p>
+                      ) : (
+                        transferCandidates.map(({ link, name }) => (
+                          <div key={link.id} className="mb-1 flex items-center justify-between rounded bg-muted/20 px-2 py-1 text-xs">
+                            <span>{name} • {teamNameById(selectedTournament.id, link.tournament_team_id)}</span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!isTournamentAdmin(selectedTournament.id)}
+                              onClick={() =>
+                                setTransferDraftByTournament((prev) => ({
+                                  ...prev,
+                                  [selectedTournament.id]: { ...selectedTransferDraft, linkId: link.id },
+                                }))
+                              }
+                            >
+                              Selecionar
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {isTournamentAdmin(selectedTournament.id) && (
+                    <>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div className="space-y-2">
+                          <Label>Jogador (vínculo atual)</Label>
+                          <Select
+                            value={selectedTransferDraft.linkId || "none"}
+                            onValueChange={(value) =>
+                              setTransferDraftByTournament((prev) => ({
+                                ...prev,
+                                [selectedTournament.id]: {
+                                  ...selectedTransferDraft,
+                                  linkId: value === "none" ? "" : value,
+                                },
+                              }))
+                            }
+                          >
+                            <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Selecione</SelectItem>
+                              {selectedLinks.map((link) => (
+                                <SelectItem key={link.id} value={link.id}>
+                                  {(profilesByUser[link.user_id]?.display_name || "Jogador")} • {teamNameById(selectedTournament.id, link.tournament_team_id)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Time de destino</Label>
+                          <Select
+                            value={selectedTransferDraft.toTeamId || "none"}
+                            onValueChange={(value) =>
+                              setTransferDraftByTournament((prev) => ({
+                                ...prev,
+                                [selectedTournament.id]: {
+                                  ...selectedTransferDraft,
+                                  toTeamId: value === "none" ? "" : value,
+                                },
+                              }))
+                            }
+                          >
+                            <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Selecione</SelectItem>
+                              {selectedTeams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Motivo</Label>
+                          <Input
+                            value={selectedTransferDraft.reason}
+                            onChange={(e) =>
+                              setTransferDraftByTournament((prev) => ({
+                                ...prev,
+                                [selectedTournament.id]: { ...selectedTransferDraft, reason: e.target.value },
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Button
+                          className="gap-2"
+                          disabled={!isTransferWindowOpen(selectedTournament) || runningTransferForTournament === selectedTournament.id}
+                          onClick={() => executeTransfer(selectedTournament)}
+                        >
+                          <ArrowRightLeft className="h-4 w-4" />
+                          {runningTransferForTournament === selectedTournament.id ? "Transferindo..." : "Executar transferência"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Histórico de transferências</p>
+                    {selectedTransferEvents.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Nenhuma transferência registrada.</p>
+                    ) : (
+                      selectedTransferEvents.slice(0, 20).map((event) => (
+                        <div key={event.id} className="rounded-md border border-border/50 p-2 text-xs">
+                          <p className="text-foreground">
+                            {(profilesByUser[event.user_id]?.display_name || "Jogador")} • {teamNameById(selectedTournament.id, event.from_team_id)} → {teamNameById(selectedTournament.id, event.to_team_id)}
+                          </p>
+                          <p className="text-muted-foreground">{event.reason || "Sem motivo"} • {new Date(event.created_at).toLocaleString("pt-BR")}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="premiacao" className="space-y-3">
+              {!selectedTournament ? (
+                <p className="text-sm text-muted-foreground">Selecione um torneio na lista.</p>
+              ) : loadingSelectedData ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {selectedAchievements.length === 0 ? (
+                    <div className="rounded-md border border-border/60 bg-muted/20 p-6 text-sm text-muted-foreground">Nenhuma premiação registrada.</div>
+                  ) : (
+                    selectedAchievements.map((achievement) => {
+                      const catalog = selectedAchievementCatalog.find((item) => item.id === achievement.achievement_catalog_id);
+                      return (
+                        <div key={achievement.id} className="rounded-md border border-border/50 p-3">
+                          <p className="font-medium text-foreground"><Award className="mr-1 inline h-4 w-4" /> {catalog?.title || achievement.achievement_type}</p>
+                          <p className="text-xs text-muted-foreground">{catalog?.description || "Sem descrição"}</p>
+                          <p className="text-xs text-muted-foreground">Vencedor: {profilesByUser[achievement.user_id]?.display_name || "Jogador/Time"}</p>
+                          <Button size="sm" variant="outline" className="mt-2">Ver no perfil</Button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </PageSectionCard>
         </PageContent>
       </AdminShell>
+
+      <Dialog open={imagePreview.open} onOpenChange={(open) => !open && closeImagePreview()}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Pré-visualização da imagem</DialogTitle>
+            <DialogDescription>Confirme a imagem antes de salvar no torneio.</DialogDescription>
+          </DialogHeader>
+
+          {imagePreview.objectUrl ? (
+            <div className="overflow-hidden rounded-md border border-border/60">
+              <img src={imagePreview.objectUrl} alt="Pré-visualização" className="max-h-72 w-full object-cover" />
+            </div>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={closeImagePreview}>Cancelar</Button>
+            <Button
+              onClick={async () => {
+                if (!imagePreview.file || !imagePreview.tournamentId) return;
+                const tournament = tournaments.find((t) => t.id === imagePreview.tournamentId);
+                if (!tournament) {
+                  toast.error("Torneio não encontrado para upload");
+                  return;
+                }
+
+                if (imagePreview.scope === "TOURNAMENT") {
+                  await uploadTournamentImage(tournament, imagePreview.file);
+                } else if (imagePreview.teamId) {
+                  const team = (teamsByTournament[tournament.id] || []).find((item) => item.id === imagePreview.teamId);
+                  if (!team) {
+                    toast.error("Time não encontrado para upload");
+                    return;
+                  }
+                  await uploadTeamImage(tournament, team, imagePreview.file);
+                }
+
+                closeImagePreview();
+              }}
+            >
+              Salvar imagem
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={wizard.open} onOpenChange={(open) => setWizard((prev) => ({ ...prev, open }))}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Inscrição de Time</DialogTitle>
+            <DialogDescription>
+              Fluxo em etapas para selecionar/criar time, adicionar jogadores e enviar convites.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Etapa {wizard.step} de 3
+          </div>
+
+          {wizard.step === 1 && (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Selecionar time existente</Label>
+                <Select
+                  value={wizard.existingTeamId || "none"}
+                  onValueChange={(value) =>
+                    setWizard((prev) => ({ ...prev, existingTeamId: value === "none" ? "" : value }))
+                  }
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Criar novo time</SelectItem>
+                    {selectedTeams
+                      .filter((team) => team.owner_user_id === user.id)
+                      .map((team) => (
+                        <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {!wizard.existingTeamId && (
+                <div className="space-y-2">
+                  <Label>Novo time</Label>
+                  <Input
+                    value={wizard.newTeamName}
+                    onChange={(e) => setWizard((prev) => ({ ...prev, newTeamName: e.target.value }))}
+                    placeholder="Nome do time"
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button onClick={() => setWizard((prev) => ({ ...prev, step: 2 }))}>Próximo</Button>
+              </div>
+            </div>
+          )}
+
+          {wizard.step === 2 && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <Input
+                  value={wizard.inviteSearch}
+                  onChange={(e) => setWizard((prev) => ({ ...prev, inviteSearch: e.target.value }))}
+                  placeholder="Buscar jogador por nome"
+                />
+                <Button variant="outline" onClick={addInviteToWizard}>Adicionar</Button>
+              </div>
+
+              <div className="space-y-2">
+                {wizard.invites.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Nenhum jogador adicionado ainda.</p>
+                ) : (
+                  wizard.invites.map((invite) => (
+                    <div key={invite.user_id} className="flex items-center justify-between rounded-md border border-border/50 p-2 text-xs">
+                      <span>{invite.display_name}</span>
+                      <Badge variant="outline">{invite.status}</Badge>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="flex justify-between">
+                <Button variant="outline" onClick={() => setWizard((prev) => ({ ...prev, step: 1 }))}>Voltar</Button>
+                <Button onClick={() => setWizard((prev) => ({ ...prev, step: 3 }))}>Próximo</Button>
+              </div>
+            </div>
+          )}
+
+          {wizard.step === 3 && (
+            <div className="space-y-3">
+              <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
+                O time só será confirmado após todos os jogadores aceitarem.
+              </div>
+              <p className="text-sm text-foreground">Convites preparados: {wizard.invites.length}</p>
+              <div className="flex justify-between">
+                <Button variant="outline" onClick={() => setWizard((prev) => ({ ...prev, step: 2 }))}>Voltar</Button>
+                <Button disabled={submittingWizard} onClick={submitTeamRegistrationWizard}>
+                  {submittingWizard ? "Enviando..." : "Enviar inscrição"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editorState} onOpenChange={(open) => !open && setEditorState(null)}>
         <DialogContent className="max-w-2xl">
