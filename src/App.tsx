@@ -9,6 +9,7 @@ import Auth from "./pages/Auth";
 import AuthCallback from "./pages/AuthCallback";
 import AdminPelada from "./pages/AdminPelada";
 import AdminSystem from "./pages/AdminSystem";
+import AdminTournament from "./pages/AdminTournament";
 import PublicPelada from "./pages/PublicPelada";
 import NotFound from "./pages/NotFound";
 
@@ -26,6 +27,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/admin" element={<AdminSystem />} />
+            <Route path="/admin/torneios" element={<AdminTournament />} />
             <Route path="/admin/:id" element={<AdminPelada />} />
             <Route path="/pelada/:id" element={<PublicPelada />} />
             <Route path="*" element={<NotFound />} />

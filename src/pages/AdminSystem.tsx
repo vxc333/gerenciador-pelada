@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -7,6 +8,8 @@ import { AppHeader } from "@/components/layout/AppHeader";
 import { PageContent, PageSectionCard } from "@/components/layout/PageLayout";
 import { PageState } from "@/components/layout/PageState";
 import { SystemAccessSection } from "@/components/admin/SystemAccessSection";
+import { Button } from "@/components/ui/button";
+import { Trophy } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
 type UserProfileRow = Tables<"user_profiles">;
@@ -195,6 +198,14 @@ const AdminSystem = () => {
         title="PAINEL ADMINISTRATIVO DO SISTEMA"
         subtitle="Gerencie acessos automáticos e admins globais"
         backTo="/"
+        actions={
+          <Link to="/admin/torneios">
+            <Button variant="outline" size="sm" className="gap-2">
+              <Trophy className="h-4 w-4" />
+              Torneios
+            </Button>
+          </Link>
+        }
       />
 
       <PageContent className="max-w-2xl space-y-5">
