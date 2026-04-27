@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Check, Clock, Download, Heart, Link as LinkIcon, List, Settings, Shield, Shuffle, Trash2, Users, X } from "lucide-react";
 import { AppHeader } from "@/components/layout/AppHeader";
@@ -20,6 +21,7 @@ import {
   toBrasiliaDateTimeLocalInput,
 } from "@/lib/datetime-br";
 import { buildOrderedPeladaEntries, isGoalkeeperGuestName, sortPeladaMembers, type PeladaListEntry } from "@/lib/pelada-participants";
+import { generatePeladaDraw, parseBlockedPairsText } from "@/lib/pelada-draw";
 import { getPeladaRules, setPeladaRules, type PeladaRules } from "@/lib/pelada-rules";
 import type { Json, Tables } from "@/integrations/supabase/types";
 
@@ -57,15 +59,6 @@ const parseDrawResult = (value: Json | null): DrawTeam[] | null => {
     .filter((team): team is DrawTeam => team !== null);
 
   return parsed;
-};
-
-const shuffle = <T,>(arr: T[]) => {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
 };
 
 function normalizeTimeForInput(time?: string) {
@@ -112,11 +105,7 @@ const AdminPelada = () => {
   const [activeMenu, setActiveMenu] = useState<AdminMenu>("config");
   const [externalGuestName, setExternalGuestName] = useState("");
   const [externalGuestIsGoalkeeper, setExternalGuestIsGoalkeeper] = useState(false);
-  const [rules, setRules] = useState<PeladaRules>({
-    autoConfirmAdmins: true,
-    maxGuestsPerMember: 7,
-    progressiveWarningHours: 24,
-  });
+  const [rules, setRules] = useState<PeladaRules>(getPeladaRules(""));
   const [memberStats, setMemberStats] = useState<Record<string, MemberStats>>({});
   const [systemMemberSearch, setSystemMemberSearch] = useState("");
   const [systemMemberResults, setSystemMemberResults] = useState<UserProfileRow[]>([]);
@@ -456,6 +445,10 @@ const AdminPelada = () => {
       .filter((entry) => !entry.isWaiting && !entry.isGoalkeeper)
       .map((entry) => (entry.kind === "member" ? getMemberDisplayName(entry.member) : entry.guest.guest_name));
   }, [getMemberDisplayName, orderedListEntries]);
+
+  const eligibleDrawEntries = useMemo(() => {
+    return orderedListEntries.filter((entry) => !entry.isWaiting && !entry.isGoalkeeper);
+  }, [orderedListEntries]);
 
   const timelineEvents = useMemo<TimelineEvent[]>(() => {
     if (!pelada) return [];
@@ -1052,131 +1045,66 @@ const AdminPelada = () => {
       return;
     }
 
-    if (eligibleEntries.length === 0) {
+    if (eligibleDrawEntries.length === 0) {
       toast.error("Não há jogadores elegíveis para sorteio");
       return;
     }
 
-    // Busca o sorteio mais recente para evitar repetir companheiros de time.
-    const { data: prevDrawData } = await supabase
+    const { data: prevDrawRows } = await supabase
       .from("peladas")
       .select("draw_result")
       .neq("id", pelada.id)
       .not("draw_done_at", "is", null)
       .order("draw_done_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(Math.max(1, rules.drawRecentDrawsWindow));
 
-    const prevDraw = prevDrawData?.draw_result
-      ? parseDrawResult(prevDrawData.draw_result as Json)
-      : null;
+    const previousDraws = (prevDrawRows || [])
+      .map((row) => parseDrawResult((row.draw_result as Json) ?? null))
+      .filter((draw): draw is DrawTeam[] => Array.isArray(draw) && draw.length > 0);
 
-    const normName = (n: string) => n.trim().toLowerCase();
-
-    const previousTeammatePairs = new Set<string>();
-
-    const pairKey = (a: string, b: string) => {
-      const na = normName(a);
-      const nb = normName(b);
-      return na < nb ? `${na}::${nb}` : `${nb}::${na}`;
-    };
-
-    if (prevDraw) {
-      for (const team of prevDraw) {
-        for (let i = 0; i < team.players.length; i += 1) {
-          for (let j = i + 1; j < team.players.length; j += 1) {
-            previousTeammatePairs.add(pairKey(team.players[i], team.players[j]));
-          }
-        }
+    const participants = eligibleDrawEntries.map((entry) => {
+      if (entry.kind === "member") {
+        return {
+          id: entry.id,
+          displayName: getMemberDisplayName(entry.member),
+          kind: "member" as const,
+          userId: entry.member.user_id,
+          hostUserId: entry.member.user_id,
+        };
       }
+
+      return {
+        id: entry.id,
+        displayName: entry.guest.guest_name,
+        kind: "guest" as const,
+        userId: null,
+        hostUserId: entry.hostMember?.user_id ?? null,
+      };
+    });
+
+    const drawResult = generatePeladaDraw({
+      participants,
+      numTeams: pelada.num_teams,
+      previousDraws,
+      constraints: {
+        blockedPairs: parseBlockedPairsText(rules.drawDoNotPairPlayersText),
+        avoidSameHostGuests: rules.drawAvoidSameHostGuests,
+        ensureGuestPerTeam: rules.drawEnsureGuestPerTeam,
+        ensureHostWithOwnGuest: rules.drawEnsureHostWithGuest,
+        avoidRecentPairs: rules.drawAvoidRecentPairs,
+      },
+    });
+
+    if (drawResult.diagnostics.blockedPairViolations > 0) {
+      toast.error("Não foi possível gerar sorteio respeitando os pares proibidos. Ajuste as regras e tente novamente.");
+      return;
     }
-
-    const numTeams = pelada.num_teams;
-    const baseSize = Math.floor(eligibleEntries.length / numTeams);
-    const extraTeams = eligibleEntries.length % numTeams;
-    const capacities = Array.from({ length: numTeams }, (_, idx) => (idx < extraTeams ? baseSize + 1 : baseSize));
-
-    const createEmptyTeams = () =>
-      Array.from({ length: numTeams }, (_, idx) => ({
-        team: idx + 1,
-        players: [] as string[],
-      }));
-
-    const countConflictsInTeam = (teamPlayers: string[], player: string) => {
-      let conflicts = 0;
-      for (const teammate of teamPlayers) {
-        if (previousTeammatePairs.has(pairKey(teammate, player))) conflicts += 1;
-      }
-      return conflicts;
-    };
-
-    const countTotalConflicts = (candidateTeams: DrawTeam[]) => {
-      let total = 0;
-      for (const team of candidateTeams) {
-        for (let i = 0; i < team.players.length; i += 1) {
-          for (let j = i + 1; j < team.players.length; j += 1) {
-            if (previousTeammatePairs.has(pairKey(team.players[i], team.players[j]))) {
-              total += 1;
-            }
-          }
-        }
-      }
-      return total;
-    };
-
-    const maxAttempts = 300;
-    let bestTeams: DrawTeam[] | null = null;
-    let bestConflicts = Number.POSITIVE_INFINITY;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const players = shuffle(eligibleEntries);
-      const teams = createEmptyTeams();
-
-      for (const playerName of players) {
-        let bestScore = Number.POSITIVE_INFINITY;
-        const bestCandidates: number[] = [];
-
-        for (let teamIndex = 0; teamIndex < numTeams; teamIndex += 1) {
-          if (teams[teamIndex].players.length >= capacities[teamIndex]) continue;
-
-          const conflicts = countConflictsInTeam(teams[teamIndex].players, playerName);
-          const load = teams[teamIndex].players.length;
-          const score = conflicts * (eligibleEntries.length + 1) + load;
-
-          if (score < bestScore) {
-            bestScore = score;
-            bestCandidates.length = 0;
-            bestCandidates.push(teamIndex);
-          } else if (score === bestScore) {
-            bestCandidates.push(teamIndex);
-          }
-        }
-
-        if (bestCandidates.length === 0) {
-          continue;
-        }
-
-        const randomCandidate = bestCandidates[Math.floor(Math.random() * bestCandidates.length)];
-        teams[randomCandidate].players.push(playerName);
-      }
-
-      const totalConflicts = countTotalConflicts(teams);
-
-      if (totalConflicts < bestConflicts) {
-        bestConflicts = totalConflicts;
-        bestTeams = teams;
-      }
-
-      if (bestConflicts === 0) break;
-    }
-
-    const teams = bestTeams || createEmptyTeams();
 
     const { error } = await supabase
       .from("peladas")
       .update({
         draw_done_at: new Date().toISOString(),
-        draw_result: teams,
+        draw_result: drawResult.teams,
         draw_done_by: user.id,
       })
       .eq("id", pelada.id)
@@ -1187,10 +1115,31 @@ const AdminPelada = () => {
       return;
     }
 
-    if (bestConflicts > 0) {
-      toast.success(`Sorteio realizado com ${bestConflicts} repetição(ões) inevitável(is) de parceria.`);
+    const diagnostics = drawResult.diagnostics;
+    const messages: string[] = [];
+
+    if (rules.drawAvoidRecentPairs && diagnostics.repeatedRecentPairs > 0) {
+      messages.push(`${diagnostics.repeatedRecentPairs} par(es) repetido(s) dos últimos ${drawResult.usedPreviousDraws} sorteios`);
+    }
+
+    if (rules.drawEnsureGuestPerTeam && diagnostics.teamsWithoutGuest > 0) {
+      messages.push(`${diagnostics.teamsWithoutGuest} time(s) sem convidado (${diagnostics.unavoidableTeamsWithoutGuest} inevitável(is))`);
+    }
+
+    if (rules.drawAvoidSameHostGuests && diagnostics.sameHostGuestCollisions > 0) {
+      messages.push(
+        `${diagnostics.sameHostGuestCollisions} combinação(ões) com convidados do mesmo responsável juntos (${diagnostics.unavoidableSameHostGuestCollisions} inevitável(is))`
+      );
+    }
+
+    if (rules.drawEnsureHostWithGuest && diagnostics.hostsMissingOwnGuest > 0) {
+      messages.push(`${diagnostics.hostsMissingOwnGuest} membro(s) sem convidado próprio no mesmo time`);
+    }
+
+    if (messages.length === 0) {
+      toast.success("Sorteio realizado com sucesso cumprindo todas as regras configuradas!");
     } else {
-      toast.success("Sorteio realizado com sucesso sem repetir parcerias da última pelada!");
+      toast.success(`Sorteio realizado com ajustes: ${messages.join("; ")}.`);
     }
     fetchAll();
   };
@@ -1420,6 +1369,72 @@ const AdminPelada = () => {
                 value={rules.progressiveWarningHours}
                 onChange={(e) => setRules((prev) => ({ ...prev, progressiveWarningHours: Number(e.target.value || 1) }))}
               />
+            </div>
+
+            <div className="rounded-md border border-border/60 bg-secondary/20 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sorteio Inteligente</p>
+
+              <label className="mb-2 flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={rules.drawAvoidSameHostGuests}
+                  onChange={(e) => setRules((prev) => ({ ...prev, drawAvoidSameHostGuests: e.target.checked }))}
+                />
+                Evitar convidados do mesmo responsável no mesmo time
+              </label>
+
+              <label className="mb-2 flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={rules.drawEnsureGuestPerTeam}
+                  onChange={(e) => setRules((prev) => ({ ...prev, drawEnsureGuestPerTeam: e.target.checked }))}
+                />
+                Priorizar pelo menos 1 convidado por time
+              </label>
+
+              <label className="mb-2 flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={rules.drawEnsureHostWithGuest}
+                  onChange={(e) => setRules((prev) => ({ ...prev, drawEnsureHostWithGuest: e.target.checked }))}
+                />
+                Priorizar pelo menos 1 convidado do membro no próprio time
+              </label>
+
+              <label className="mb-2 flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={rules.drawAvoidRecentPairs}
+                  onChange={(e) => setRules((prev) => ({ ...prev, drawAvoidRecentPairs: e.target.checked }))}
+                />
+                Evitar repetir pares dos sorteios recentes
+              </label>
+
+              <div className="mb-2">
+                <p className="mb-1 text-xs text-muted-foreground">Quantidade de sorteios passados para comparar</p>
+                <Input
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={rules.drawRecentDrawsWindow}
+                  onChange={(e) =>
+                    setRules((prev) => ({
+                      ...prev,
+                      drawRecentDrawsWindow: Number(e.target.value || 1),
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs text-muted-foreground">Pares proibidos (uma dupla por linha: Nome A | Nome B)</p>
+                <Textarea
+                  value={rules.drawDoNotPairPlayersText}
+                  onChange={(e) => setRules((prev) => ({ ...prev, drawDoNotPairPlayersText: e.target.value }))}
+                  placeholder={"Fulano | Ciclano\nBeltrano | João"}
+                  className="min-h-[110px]"
+                />
+              </div>
             </div>
           </div>
 
