@@ -533,7 +533,10 @@ const PublicPelada = () => {
       return;
     }
 
-    const moveUsesHostRole = entry.kind === "guest" && pelada.guest_priority_mode === "grouped_with_member";
+    const moveUsesHostRole =
+      entry.kind === "guest" &&
+      pelada.guest_priority_mode === "grouped_with_member" &&
+      !entry.isGoalkeeper;
     const roleIsGoalkeeper = moveUsesHostRole && entry.hostMember ? entry.hostMember.is_goalkeeper : entry.isGoalkeeper;
 
     if (!toWaiting) {
@@ -619,7 +622,7 @@ const PublicPelada = () => {
       return;
     }
 
-    if (pelada.guest_priority_mode === "grouped_with_member") {
+    if (moveUsesHostRole) {
       if (!entry.hostMember) {
         setMovingEntryId(null);
         toast.error("Convidado sem responsável ativo não pode ser movido diretamente.");
