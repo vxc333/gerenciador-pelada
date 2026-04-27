@@ -904,6 +904,30 @@ const PublicPelada = () => {
       return;
     }
 
+    if (status === "approved") {
+      const { error: rebalanceError } = await supabase.rpc("rebalance_pelada_waitlist", { p_pelada_id: pelada.id });
+      if (rebalanceError) {
+        console.error("Erro ao recalcular lista de espera após aprovação:", rebalanceError);
+      }
+
+      const { data: refreshedGuest } = await supabase
+        .from("pelada_member_guests")
+        .select("is_waiting, guest_name")
+        .eq("id", guestId)
+        .maybeSingle();
+
+      if (refreshedGuest?.is_waiting) {
+        const isGoalkeeperGuest = /\(goleiro\)\s*$/i.test(refreshedGuest.guest_name || "");
+        toast.success(
+          isGoalkeeperGuest
+            ? "Convidado aprovado e colocado na espera de goleiros (sem vaga no momento)"
+            : "Convidado aprovado e colocado na lista de espera (sem vaga no momento)",
+        );
+        fetchAll();
+        return;
+      }
+    }
+
     toast.success(status === "approved" ? "Convidado aprovado" : "Convidado recusado");
     fetchAll();
   };

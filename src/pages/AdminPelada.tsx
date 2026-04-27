@@ -953,24 +953,50 @@ const AdminPelada = () => {
     }
 
     const finalGuestName = externalGuestIsGoalkeeper ? `${trimmedName} (goleiro)` : trimmedName;
-    const { error } = await supabase.from("pelada_member_guests").insert({
-      pelada_id: pelada.id,
-      pelada_member_id: adminMember.id,
-      guest_name: finalGuestName,
-      admin_selected: true,
-      approval_status: "approved",
-      approved_by: user.id,
-      approved_at: new Date().toISOString(),
-    });
+    const { data: insertedGuest, error } = await supabase
+      .from("pelada_member_guests")
+      .insert({
+        pelada_id: pelada.id,
+        pelada_member_id: adminMember.id,
+        guest_name: finalGuestName,
+        admin_selected: true,
+        approval_status: "approved",
+        approved_by: user.id,
+        approved_at: new Date().toISOString(),
+      })
+      .select("id, is_waiting")
+      .single();
 
     if (error) {
       toast.error("Não foi possível adicionar pessoa externa na lista");
       return;
     }
 
+    const { error: rebalanceError } = await supabase.rpc("rebalance_pelada_waitlist", { p_pelada_id: pelada.id });
+    if (rebalanceError) {
+      console.error("Erro ao recalcular lista de espera após adicionar externo:", rebalanceError);
+    }
+
+    const { data: refreshedGuest } = await supabase
+      .from("pelada_member_guests")
+      .select("is_waiting")
+      .eq("id", insertedGuest.id)
+      .maybeSingle();
+
     setExternalGuestName("");
     setExternalGuestIsGoalkeeper(false);
-    toast.success("Pessoa adicionada na lista com sucesso");
+
+    if (refreshedGuest?.is_waiting) {
+      toast.success(
+        externalGuestIsGoalkeeper
+          ? "Pessoa adicionada na espera de goleiros (sem vaga no momento)"
+          : "Pessoa adicionada na lista de espera (sem vaga no momento)",
+      );
+      fetchAll();
+      return;
+    }
+
+    toast.success("Pessoa adicionada na lista principal com sucesso");
     fetchAll();
   };
 
