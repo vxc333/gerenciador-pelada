@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Check, Clock, Download, Heart, Link as LinkIcon, List, Settings, Shield, Shuffle, Trash2, Users, X } from "lucide-react";
 import { AppHeader } from "@/components/layout/AppHeader";
@@ -37,6 +36,7 @@ type UserProfileRow = Tables<"user_profiles">;
 type TimelineEvent = { id: string; message: string; at: string };
 type AdminMenu = "config" | "lista" | "historico" | "queridometro" | "membros";
 type MemberStats = { userId: string; displayName: string; email: string; peladasCount: number; isGoalkeeper: boolean; isWaiting: boolean };
+const NO_BLOCKED_PAIR_SELECTION = "__none__";
 
 const parseDrawResult = (value: Json | null): DrawTeam[] | null => {
   if (!Array.isArray(value)) return null;
@@ -111,6 +111,8 @@ const AdminPelada = () => {
   const [systemMemberResults, setSystemMemberResults] = useState<UserProfileRow[]>([]);
   const [isSearchingSystemMembers, setIsSearchingSystemMembers] = useState(false);
   const [addingSystemMemberUserId, setAddingSystemMemberUserId] = useState<string | null>(null);
+  const [blockedPairLeft, setBlockedPairLeft] = useState("");
+  const [blockedPairRight, setBlockedPairRight] = useState("");
 
   const fetchAll = useCallback(async () => {
     if (!id || !user) return;
@@ -449,6 +451,70 @@ const AdminPelada = () => {
   const eligibleDrawEntries = useMemo(() => {
     return orderedListEntries.filter((entry) => !entry.isWaiting && !entry.isGoalkeeper);
   }, [orderedListEntries]);
+
+  const drawSelectablePlayers = useMemo(() => {
+    return Array.from(new Set(eligibleEntries)).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [eligibleEntries]);
+
+  const blockedPairs = useMemo(() => {
+    return parseBlockedPairsText(rules.drawDoNotPairPlayersText);
+  }, [rules.drawDoNotPairPlayersText]);
+
+  const blockedPairKeys = useMemo(() => {
+    const toKey = (a: string, b: string) => {
+      const left = a.trim().toLowerCase();
+      const right = b.trim().toLowerCase();
+      return left < right ? `${left}::${right}` : `${right}::${left}`;
+    };
+
+    return new Set(blockedPairs.map(([a, b]) => toKey(a, b)));
+  }, [blockedPairs]);
+
+  const serializeBlockedPairs = (pairs: Array<[string, string]>) => pairs.map(([a, b]) => `${a} | ${b}`).join("\n");
+
+  const addBlockedPair = () => {
+    const left = blockedPairLeft.trim();
+    const right = blockedPairRight.trim();
+
+    if (!left || !right) {
+      toast.error("Selecione os dois jogadores para criar o par proibido");
+      return;
+    }
+
+    if (left === right) {
+      toast.error("Escolha dois jogadores diferentes");
+      return;
+    }
+
+    const keyLeft = left.toLowerCase();
+    const keyRight = right.toLowerCase();
+    const key = keyLeft < keyRight ? `${keyLeft}::${keyRight}` : `${keyRight}::${keyLeft}`;
+
+    if (blockedPairKeys.has(key)) {
+      toast.error("Esse par já está na lista de pares proibidos");
+      return;
+    }
+
+    const nextPairs: Array<[string, string]> = [...blockedPairs, [left, right]];
+    setRules((prev) => ({ ...prev, drawDoNotPairPlayersText: serializeBlockedPairs(nextPairs) }));
+    setBlockedPairLeft("");
+    setBlockedPairRight("");
+  };
+
+  const removeBlockedPair = (targetIndex: number) => {
+    const nextPairs = blockedPairs.filter((_, index) => index !== targetIndex);
+    setRules((prev) => ({ ...prev, drawDoNotPairPlayersText: serializeBlockedPairs(nextPairs) }));
+  };
+
+  useEffect(() => {
+    if (blockedPairLeft && !drawSelectablePlayers.includes(blockedPairLeft)) {
+      setBlockedPairLeft("");
+    }
+
+    if (blockedPairRight && !drawSelectablePlayers.includes(blockedPairRight)) {
+      setBlockedPairRight("");
+    }
+  }, [blockedPairLeft, blockedPairRight, drawSelectablePlayers]);
 
   const timelineEvents = useMemo<TimelineEvent[]>(() => {
     if (!pelada) return [];
@@ -1427,13 +1493,78 @@ const AdminPelada = () => {
               </div>
 
               <div>
-                <p className="mb-1 text-xs text-muted-foreground">Pares proibidos (uma dupla por linha: Nome A | Nome B)</p>
-                <Textarea
-                  value={rules.drawDoNotPairPlayersText}
-                  onChange={(e) => setRules((prev) => ({ ...prev, drawDoNotPairPlayersText: e.target.value }))}
-                  placeholder={"Fulano | Ciclano\nBeltrano | João"}
-                  className="min-h-[110px]"
-                />
+                <p className="mb-1 text-xs text-muted-foreground">Pares proibidos (selecionados com base nos elegíveis da pelada)</p>
+
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Select
+                    value={blockedPairLeft || NO_BLOCKED_PAIR_SELECTION}
+                    onValueChange={(value) => setBlockedPairLeft(value === NO_BLOCKED_PAIR_SELECTION ? "" : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Jogador A" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_BLOCKED_PAIR_SELECTION}>Selecione</SelectItem>
+                      {drawSelectablePlayers.map((playerName) => (
+                        <SelectItem key={`blocked-left-${playerName}`} value={playerName}>
+                          {playerName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select
+                    value={blockedPairRight || NO_BLOCKED_PAIR_SELECTION}
+                    onValueChange={(value) => setBlockedPairRight(value === NO_BLOCKED_PAIR_SELECTION ? "" : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Jogador B" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_BLOCKED_PAIR_SELECTION}>Selecione</SelectItem>
+                      {drawSelectablePlayers
+                        .filter((playerName) => playerName !== blockedPairLeft)
+                        .map((playerName) => (
+                          <SelectItem key={`blocked-right-${playerName}`} value={playerName}>
+                            {playerName}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button type="button" variant="outline" onClick={addBlockedPair} disabled={drawSelectablePlayers.length < 2}>
+                    Adicionar par
+                  </Button>
+                </div>
+
+                <div className="mt-2 space-y-2">
+                  {blockedPairs.length === 0 ? (
+                    <p className="rounded-md border border-dashed border-border/60 bg-muted/30 p-2 text-xs text-muted-foreground">
+                      Nenhum par proibido configurado.
+                    </p>
+                  ) : (
+                    blockedPairs.map(([left, right], index) => (
+                      <div
+                        key={`blocked-pair-${left}-${right}-${index}`}
+                        className="flex items-center justify-between rounded-md border border-border/60 bg-secondary/10 px-2 py-1.5"
+                      >
+                        <span className="text-sm text-foreground">
+                          {left} <span className="text-muted-foreground">x</span> {right}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => removeBlockedPair(index)}
+                          aria-label={`Remover par proibido ${left} e ${right}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
