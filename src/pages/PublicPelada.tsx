@@ -565,6 +565,14 @@ const PublicPelada = () => {
       }
     };
 
+    const hasRoleCapacity = (isGoalkeeperRole: boolean) => {
+      const activeCountInRole = orderedListEntries.filter(
+        (currentEntry) => !currentEntry.isWaiting && currentEntry.isGoalkeeper === isGoalkeeperRole,
+      ).length;
+      const roleCapacity = isGoalkeeperRole ? pelada.max_goalkeepers : pelada.max_players;
+      return activeCountInRole < roleCapacity;
+    };
+
     const buildMemberMovePatch = (isGoalkeeperRole: boolean) => {
       const patch: { is_waiting: boolean; priority_score?: number; created_at?: string } = { is_waiting: toWaiting };
 
@@ -626,6 +634,27 @@ const PublicPelada = () => {
 
       await forceRebalance();
 
+      const { data: refreshedMember } = await supabase
+        .from("pelada_members")
+        .select("is_waiting")
+        .eq("id", entry.member.id)
+        .eq("pelada_id", pelada.id)
+        .maybeSingle();
+
+      if (refreshedMember && refreshedMember.is_waiting !== toWaiting) {
+        if (!toWaiting && !hasRoleCapacity(entry.isGoalkeeper)) {
+          toast.error(
+            entry.isGoalkeeper
+              ? `Sem vaga de goleiro na lista principal (${pelada.max_goalkeepers} no limite).`
+              : `Sem vaga de linha na lista principal (${pelada.max_players} no limite).`,
+          );
+        } else {
+          toast.error("Movimentação não pôde ser mantida após recalcular a lista.");
+        }
+        fetchAll();
+        return;
+      }
+
       toast.success(toWaiting ? "Membro movido para a lista de espera" : "Membro movido para a lista principal");
       fetchAll();
       return;
@@ -666,6 +695,27 @@ const PublicPelada = () => {
 
       await forceRebalance();
 
+      const { data: refreshedHost } = await supabase
+        .from("pelada_members")
+        .select("is_waiting")
+        .eq("id", entry.hostMember.id)
+        .eq("pelada_id", pelada.id)
+        .maybeSingle();
+
+      if (refreshedHost && refreshedHost.is_waiting !== toWaiting) {
+        if (!toWaiting && !hasRoleCapacity(entry.hostMember.is_goalkeeper)) {
+          toast.error(
+            entry.hostMember.is_goalkeeper
+              ? `Sem vaga de goleiro na lista principal (${pelada.max_goalkeepers} no limite).`
+              : `Sem vaga de linha na lista principal (${pelada.max_players} no limite).`,
+          );
+        } else {
+          toast.error("Movimentação não pôde ser mantida após recalcular a lista.");
+        }
+        fetchAll();
+        return;
+      }
+
       toast.success(
         toWaiting
           ? "Responsável do convidado movido para a lista de espera"
@@ -705,6 +755,27 @@ const PublicPelada = () => {
     }
 
     await forceRebalance();
+
+    const { data: refreshedGuest } = await supabase
+      .from("pelada_member_guests")
+      .select("is_waiting")
+      .eq("id", entry.guest.id)
+      .eq("pelada_id", pelada.id)
+      .maybeSingle();
+
+    if (refreshedGuest && refreshedGuest.is_waiting !== toWaiting) {
+      if (!toWaiting && !hasRoleCapacity(entry.isGoalkeeper)) {
+        toast.error(
+          entry.isGoalkeeper
+            ? `Sem vaga de goleiro na lista principal (${pelada.max_goalkeepers} no limite).`
+            : `Sem vaga de linha na lista principal (${pelada.max_players} no limite).`,
+        );
+      } else {
+        toast.error("Movimentação não pôde ser mantida após recalcular a lista.");
+      }
+      fetchAll();
+      return;
+    }
 
     toast.success(toWaiting ? "Convidado movido para a lista de espera" : "Convidado movido para a lista principal");
     fetchAll();
