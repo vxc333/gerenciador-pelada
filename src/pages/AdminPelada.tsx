@@ -202,7 +202,6 @@ const AdminPelada = () => {
     });
     setProfilesByUserId(map);
 
-    // Fetch system-wide bans for these users (if any)
     try {
       const { data: systemBansData } = await supabase.from("system_bans").select("*").in("user_id", Array.from(ids));
       setSystemBans(systemBansData || []);
