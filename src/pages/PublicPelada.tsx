@@ -558,6 +558,13 @@ const PublicPelada = () => {
     const entryId = `${entry.kind}-${entry.id}`;
     setMovingEntryId(entryId);
 
+    const forceRebalance = async () => {
+      const { error } = await supabase.rpc("rebalance_pelada_waitlist", { p_pelada_id: pelada.id });
+      if (error) {
+        console.error("Erro ao recalcular lista de espera:", error);
+      }
+    };
+
     const buildMemberMovePatch = (isGoalkeeperRole: boolean) => {
       const patch: { is_waiting: boolean; priority_score?: number; created_at?: string } = { is_waiting: toWaiting };
 
@@ -617,6 +624,8 @@ const PublicPelada = () => {
         return;
       }
 
+      await forceRebalance();
+
       toast.success(toWaiting ? "Membro movido para a lista de espera" : "Membro movido para a lista principal");
       fetchAll();
       return;
@@ -655,6 +664,8 @@ const PublicPelada = () => {
         return;
       }
 
+      await forceRebalance();
+
       toast.success(
         toWaiting
           ? "Responsável do convidado movido para a lista de espera"
@@ -692,6 +703,8 @@ const PublicPelada = () => {
       fetchAll();
       return;
     }
+
+    await forceRebalance();
 
     toast.success(toWaiting ? "Convidado movido para a lista de espera" : "Convidado movido para a lista principal");
     fetchAll();
