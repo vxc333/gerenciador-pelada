@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Navigate, useLocation } from "react-router-dom";
 import { CenteredCard, CenteredPage } from "@/components/layout/PageLayout";
+import { PageLoadingState } from "@/components/layout/PageLoadingState";
 import { Shield } from "lucide-react";
 
 const AUTH_REDIRECT_BASE_URL = import.meta.env.VITE_AUTH_REDIRECT_URL?.replace(/\/$/, "") ?? window.location.origin;
@@ -20,7 +21,7 @@ const Auth = () => {
     const search = new URLSearchParams(location.search);
     const redirectTo = search.get("next") || "/";
 
-    if (loading) return null;
+    if (loading) return <PageLoadingState label="Carregando" />;
     if (user) return <Navigate to={redirectTo} replace />;
 
     const handleSubmit = async (e: React.FormEvent) => {

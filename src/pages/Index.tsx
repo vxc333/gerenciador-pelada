@@ -22,6 +22,9 @@ import { AppHeader } from "@/components/layout/AppHeader";
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import { NotificationsSheet } from "@/components/pelada/NotificationsSheet";
 import { PeladaCardComponent } from "@/components/pelada/PeladaCard";
+import { PeladaCardSkeletonList } from "@/components/pelada/PeladaCardSkeleton";
+import { StatsCardSkeleton } from "@/components/pelada/StatsCardSkeleton";
+import { PageLoadingState } from "@/components/layout/PageLoadingState";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { formatDateBrasiliaLong, formatDateTimeBrasilia, fromBrasiliaDateTimeLocalInput } from "@/lib/datetime-br";
@@ -733,7 +736,7 @@ const Index = () => {
         navigate(query ? `/?${query}` : "/", { replace: true });
     }, [hasProfileName, routerLocation.search, navigate]);
 
-    if (loading || !profileChecked) return null;
+    if (loading || !profileChecked) return <PageLoadingState label="Carregando" />;
     if (!user) return <Navigate to="/auth" replace />;
 
     const handleCreate = async () => {
@@ -1545,6 +1548,15 @@ const Index = () => {
                             </div>
                         )}
 
+                        {activeSection === "historico" && loadingStats && (
+                            <>
+                                <div className="mb-3 mt-8">
+                                    <h2 className="font-display text-2xl tracking-widest text-foreground">HISTÓRICO DE PARTICIPAÇÃO</h2>
+                                </div>
+                                <StatsCardSkeleton />
+                            </>
+                        )}
+
                         {activeSection === "historico" && !loadingStats && participationStats && (
                             <>
                                 <div className="mb-3 mt-8">
@@ -1641,7 +1653,9 @@ const Index = () => {
                                 <div className="mb-3">
                                     <h2 className="font-display text-2xl tracking-widest text-foreground">MINHAS PELADAS (ADMIN)</h2>
                                 </div>
-                                {managedPeladas.length > 0 ? (
+                                {fetching ? (
+                                    <PeladaCardSkeletonList count={2} />
+                                ) : managedPeladas.length > 0 ? (
                                     <div className="space-y-3">
                                         {managedPeladas.map((pelada) => renderCard(pelada, { showAdminActions: true }))}
                                     </div>
@@ -1949,13 +1963,15 @@ const Index = () => {
                                     </p>
                                 </div>
                                 <div className="space-y-3">
+                                    {fetching && <PeladaCardSkeletonList count={3} showFeatured />}
+
                                     {!fetching && availablePeladas.length === 0 && (
-                                        <div className="rounded-lg border border-border bg-card p-10 text-center">
+                                        <div className="rounded-lg border border-border bg-card p-10 text-center animate-fade-in">
                                             <p className="text-muted-foreground">Nenhuma pelada disponivel no momento</p>
                                         </div>
                                     )}
 
-                                    {availablePeladas.length > 0 && (
+                                    {!fetching && availablePeladas.length > 0 && (
                                         <>
                                             <div className="rounded-lg border-2 border-primary/30 bg-secondary/20 p-2 text-center">
                                                 <p className="text-xs font-semibold uppercase tracking-wide text-primary">Próxima pelada</p>
