@@ -154,6 +154,7 @@ const AdminTournament = () => {
   const [adminTournamentIdSet, setAdminTournamentIdSet] = useState<Set<string>>(new Set());
   const [transferDraftByTournament, setTransferDraftByTournament] = useState<Record<string, TransferDraftState>>({});
   const [runningTransferForTournament, setRunningTransferForTournament] = useState<string | null>(null);
+  const [allSystemProfiles, setAllSystemProfiles] = useState<ProfileRow[]>([]);
 
   const [form, setForm] = useState<TournamentCreateFormValues>(defaultForm);
   const [creating, setCreating] = useState(false);
@@ -263,26 +264,21 @@ const AdminTournament = () => {
       return;
     }
 
-    const memberVisibleTournamentIds = tournamentIds.filter((id) => memberMap[id]);
 
     const [teamsRes, matchesRes, resultsRes, linksRes, transfersRes] = await Promise.all([
       supabase.from("tournament_teams").select("*").in("tournament_id", tournamentIds),
       supabase.from("tournament_matches").select("*").in("tournament_id", tournamentIds).order("created_at", { ascending: true }),
       supabase.from("tournament_match_results").select("*").in("tournament_id", tournamentIds),
-      memberVisibleTournamentIds.length > 0
-        ? supabase
-            .from("tournament_player_team_links")
-            .select("*")
-        .in("tournament_id", memberVisibleTournamentIds)
-            .eq("status", "ATIVO")
-        : Promise.resolve({ data: [] as LinkRow[] }),
-      memberVisibleTournamentIds.length > 0
-        ? supabase
-            .from("tournament_transfer_events")
-            .select("*")
-        .in("tournament_id", memberVisibleTournamentIds)
-            .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] as TransferEventRow[] }),
+      supabase
+        .from("tournament_player_team_links")
+        .select("*")
+        .in("tournament_id", tournamentIds)
+        .eq("status", "ATIVO"),
+      supabase
+        .from("tournament_transfer_events")
+        .select("*")
+        .in("tournament_id", tournamentIds)
+        .order("created_at", { ascending: false }),
     ]);
 
     const teamMap: Record<string, TeamRow[]> = {};
@@ -378,12 +374,13 @@ const AdminTournament = () => {
 
     const loadSelected = async () => {
       setLoadingSelectedData(true);
-      const [teamPlayersRes, statsRes, rankingsRes, achievementsRes, catalogRes] = await Promise.all([
+      const [teamPlayersRes, statsRes, rankingsRes, achievementsRes, catalogRes, allProfilesRes] = await Promise.all([
         supabase.from("tournament_team_players").select("*").eq("tournament_id", selectedTournamentId),
         supabase.from("tournament_player_stats").select("*").eq("tournament_id", selectedTournamentId),
         supabase.from("v_tournament_rankings").select("*").eq("tournament_id", selectedTournamentId),
         supabase.from("tournament_achievements").select("*").eq("tournament_id", selectedTournamentId),
         supabase.from("tournament_achievement_catalog").select("*").eq("tournament_id", selectedTournamentId),
+        supabase.from("user_profiles").select("*").order("display_name", { ascending: true }),
       ]);
 
       setSelectedTeamPlayers((teamPlayersRes.data || []) as TeamPlayerRow[]);
@@ -391,6 +388,7 @@ const AdminTournament = () => {
       setSelectedRankings((rankingsRes.data || []) as RankingRow[]);
       setSelectedAchievements((achievementsRes.data || []) as AchievementRow[]);
       setSelectedAchievementCatalog((catalogRes.data || []) as AchievementCatalogRow[]);
+      setAllSystemProfiles((allProfilesRes.data || []) as ProfileRow[]);
       setLoadingSelectedData(false);
     };
 
@@ -1111,10 +1109,10 @@ const AdminTournament = () => {
     : { linkId: "", toTeamId: "", reason: "" };
 
   const freePlayers = useMemo(() => {
-    if (!selectedTournament) return [] as TeamPlayerRow[];
-    const linkedUsers = new Set(selectedLinks.map((link) => link.user_id));
-    return selectedTeamPlayers.filter((player) => player.invite_status === "ACEITO" && !linkedUsers.has(player.user_id));
-  }, [selectedLinks, selectedTeamPlayers, selectedTournament]);
+    if (!selectedTournament) return [] as ProfileRow[];
+    const linkedUserIds = new Set(selectedLinks.map((link) => link.user_id));
+    return allSystemProfiles.filter((profile) => !linkedUserIds.has(profile.user_id));
+  }, [allSystemProfiles, selectedLinks, selectedTournament]);
 
   const transferCandidates = useMemo(() => {
     return selectedLinks.map((link) => ({
@@ -1578,49 +1576,71 @@ const AdminTournament = () => {
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="rounded-md border border-border/50 p-3">
-                      <p className="mb-2 text-sm font-medium text-foreground">Jogadores Livres</p>
+                      <p className="mb-2 text-sm font-medium text-foreground">
+                        Sem time ({freePlayers.length})
+                      </p>
                       {freePlayers.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">Nenhum jogador livre no momento.</p>
+                        <p className="text-xs text-muted-foreground">Todos os membros já estão em times.</p>
                       ) : (
-                        freePlayers.map((player) => (
-                          <div key={player.id} className="mb-1 flex items-center justify-between rounded bg-muted/20 px-2 py-1 text-xs">
-                            <span>{profilesByUser[player.user_id]?.display_name || "Jogador"}</span>
-                            <Button size="sm" variant="outline" disabled={!isTournamentMember(selectedTournament.id)}>Adicionar ao time</Button>
-                          </div>
-                        ))
+                        <div className="max-h-60 space-y-1 overflow-y-auto">
+                          {freePlayers.map((profile) => (
+                            <div key={profile.user_id} className="flex items-center justify-between rounded bg-muted/20 px-2 py-1.5 text-xs">
+                              <span className="font-medium">{profile.display_name}</span>
+                              {isTournamentAdmin(selectedTournament.id) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-xs"
+                                  disabled={!isTransferWindowOpen(selectedTournament)}
+                                >
+                                  Adicionar ao time
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
 
                     <div className="rounded-md border border-border/50 p-3">
-                      <p className="mb-2 text-sm font-medium text-foreground">Jogadores disponíveis para Transferência</p>
+                      <p className="mb-2 text-sm font-medium text-foreground">
+                        Com time ({transferCandidates.length})
+                      </p>
                       {transferCandidates.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">Nenhum jogador disponível.</p>
+                        <p className="text-xs text-muted-foreground">Nenhum jogador em time ainda.</p>
                       ) : (
-                        transferCandidates.map(({ link, name }) => (
-                          <div key={link.id} className="mb-1 flex items-center justify-between rounded bg-muted/20 px-2 py-1 text-xs">
-                            <span>{name} • {teamNameById(selectedTournament.id, link.tournament_team_id)}</span>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!isTournamentMember(selectedTournament.id)}
-                              onClick={() =>
-                                setTransferDraftByTournament((prev) => ({
-                                  ...prev,
-                                  [selectedTournament.id]: { ...selectedTransferDraft, linkId: link.id },
-                                }))
-                              }
-                            >
-                              Selecionar
-                            </Button>
-                          </div>
-                        ))
+                        <div className="max-h-60 space-y-1 overflow-y-auto">
+                          {transferCandidates.map(({ link, name }) => (
+                            <div key={link.id} className="flex items-center justify-between rounded bg-muted/20 px-2 py-1.5 text-xs">
+                              <span>
+                                <span className="font-medium">{name}</span>
+                                <span className="ml-1 text-muted-foreground">• {teamNameById(selectedTournament.id, link.tournament_team_id)}</span>
+                              </span>
+                              {isTournamentAdmin(selectedTournament.id) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-xs"
+                                  onClick={() =>
+                                    setTransferDraftByTournament((prev) => ({
+                                      ...prev,
+                                      [selectedTournament.id]: { ...selectedTransferDraft, linkId: link.id },
+                                    }))
+                                  }
+                                >
+                                  Selecionar
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>
 
-                  {isTournamentMember(selectedTournament.id) && (
+                  {isTournamentAdmin(selectedTournament.id) && (
                     <>
-                      <div className="grid gap-3 md:grid-cols-3">
+                      <div className="grid gap-3 sm:grid-cols-3">
                         <div className="space-y-2">
                           <Label>Jogador (vínculo atual)</Label>
                           <Select

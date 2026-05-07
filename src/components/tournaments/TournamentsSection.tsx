@@ -118,24 +118,24 @@ export function TournamentsSection({ userId, isSystemAdmin }: TournamentsSection
         <div className="space-y-3">
           {tournaments.map((t) => (
             <div key={t.id} className="rounded-lg border border-border/50 bg-card p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-foreground">{t.name}</p>
-                  {t.description && (
-                    <p className="truncate text-xs text-muted-foreground">{t.description}</p>
-                  )}
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {typeLabel[t.tournament_type] ?? t.tournament_type}
-                    {t.max_teams ? ` • Limite: ${t.max_teams} times` : ""}
-                  </p>
-                </div>
-                <Badge variant={statusVariant(t.status as TournamentStatus)} className="shrink-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Badge variant={statusVariant(t.status as TournamentStatus)} className="shrink-0 text-xs">
                   {statusLabel[t.status as TournamentStatus] ?? t.status}
                 </Badge>
+                <Badge variant="outline" className="shrink-0 text-xs">
+                  {typeLabel[t.tournament_type] ?? t.tournament_type}
+                </Badge>
               </div>
+              <p className="font-semibold leading-snug text-foreground">{t.name}</p>
+              {t.description && (
+                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{t.description}</p>
+              )}
+              {t.max_teams && (
+                <p className="mt-1 text-xs text-muted-foreground">Limite: {t.max_teams} times</p>
+              )}
               <div className="mt-3">
                 <Link to="/admin/torneios">
-                  <Button size="sm" variant="outline">
+                  <Button size="sm" variant="outline" className="w-full sm:w-auto">
                     Ver torneio
                   </Button>
                 </Link>
