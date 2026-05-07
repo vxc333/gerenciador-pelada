@@ -361,7 +361,7 @@ const Index = () => {
             return start.getTime() + TWO_HOURS_MS > now.getTime();
         });
 
-        const mySource = activeMyPeladas.length > 0 ? activeMyPeladas : myData || [];
+        const mySource = activeMyPeladas;
 
         const myEnriched = (await enrichWithCounts(mySource)).map((pelada) => ({
             ...pelada,
@@ -394,7 +394,7 @@ const Index = () => {
                 if (!start) return true; // keep if cannot parse date/time
                 return start.getTime() + TWO_HOURS_MS > now.getTime();
             });
-        const availableBase = upcomingAvailable.length > 0 ? upcomingAvailable : availableCandidates;
+        const availableBase = upcomingAvailable;
         const availableEnriched = await enrichWithCounts(availableBase);
 
         const decoratedAvailable = availableEnriched.map((pelada) => {
@@ -639,10 +639,7 @@ const Index = () => {
                 if (!start) return true;
                 return start.getTime() + TWO_HOURS_MS > now.getTime();
             });
-        const delegatedFallback = (allData || []).filter(
-            (p) => delegatedAdminPeladaIds.has(p.id) && !(myData || []).some((mp) => mp.id === p.id),
-        );
-        const delegatedSource = delegatedCandidates.length > 0 ? delegatedCandidates : delegatedFallback;
+        const delegatedSource = delegatedCandidates;
         const delegatedEnriched = delegatedSource.length > 0 ? await enrichWithCounts(delegatedSource) : [];
         const mergedManaged = [...myEnriched, ...delegatedEnriched].sort((a, b) => {
             const aStart = parsePeladaStartLocal(a.date, a.time);
