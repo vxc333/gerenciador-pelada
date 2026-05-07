@@ -1212,6 +1212,7 @@ const Index = () => {
         { key: "membros", label: "Membros", icon: Users, show: isSuperAdmin || managedPeladas.length > 0 },
         { key: "admin", label: "Minhas peladas", icon: FolderKanban, show: managedPeladas.length > 0 || isSuperAdmin },
         { key: "disponiveis", label: "Peladas disponíveis", icon: Users, show: true },
+        { key: "torneios", label: "Torneios", icon: Trophy, show: true, to: "/admin/torneios" },
     ];
 
     const handleSectionChange = (key: DashboardSection) => {
