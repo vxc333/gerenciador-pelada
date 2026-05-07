@@ -152,6 +152,7 @@ const AdminTournament = () => {
   const [activeLinksByTournament, setActiveLinksByTournament] = useState<Record<string, LinkRow[]>>({});
   const [transferEventsByTournament, setTransferEventsByTournament] = useState<Record<string, TransferEventRow[]>>({});
   const [memberByTournament, setMemberByTournament] = useState<Record<string, boolean>>({});
+  const [adminTournamentIdSet, setAdminTournamentIdSet] = useState<Set<string>>(new Set());
   const [transferDraftByTournament, setTransferDraftByTournament] = useState<Record<string, TransferDraftState>>({});
   const [runningTransferForTournament, setRunningTransferForTournament] = useState<string | null>(null);
 
@@ -247,6 +248,7 @@ const AdminTournament = () => {
     });
 
     setMemberByTournament(memberMap);
+    setAdminTournamentIdSet(adminTournamentIds);
 
     setTournaments(unique);
 
@@ -487,9 +489,22 @@ const AdminTournament = () => {
   };
 
   const createDrawAndFixtures = async (tournament: TournamentRow) => {
+    const existingMatches = matchesByTournament[tournament.id] || [];
+    if (existingMatches.length > 0) {
+      toast.error("A tabela já foi gerada para este torneio. Não é possível gerar novamente.");
+      return;
+    }
+
+    try {
+      assertCanTransitionTournamentStatus(tournament.status as TournamentStatus, "TABELA_GERADA");
+    } catch {
+      toast.error("Não é possível gerar tabela no estado atual do torneio");
+      return;
+    }
+
     const teams = (teamsByTournament[tournament.id] || []).filter((team) => team.status === "INSCRITO");
     if (teams.length < 2) {
-      toast.error("É necessário ter ao menos 2 times inscritos");
+      toast.error("É necessário ter ao menos 2 times inscritos para gerar a tabela");
       return;
     }
 
@@ -845,9 +860,10 @@ const AdminTournament = () => {
       }
     }
 
+    const newMatchStatus = editorState.status === "VALIDADO" ? "FINALIZADO" : "EM_ANDAMENTO";
     await supabase
       .from("tournament_matches")
-      .update({ status: "FINALIZADO", updated_at: new Date().toISOString() })
+      .update({ status: newMatchStatus, updated_at: new Date().toISOString() })
       .eq("id", editorState.match.id);
 
     setSavingResult(false);
@@ -861,6 +877,13 @@ const AdminTournament = () => {
       return !!memberByTournament[tournamentId];
     },
     [memberByTournament]
+  );
+
+  const isTournamentAdmin = useCallback(
+    (tournamentId: string) => {
+      return isSystemAdmin || adminTournamentIdSet.has(tournamentId);
+    },
+    [adminTournamentIdSet, isSystemAdmin]
   );
 
   const isTransferWindowOpen = useCallback((tournament: TournamentRow) => {
@@ -1293,35 +1316,41 @@ const AdminTournament = () => {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span>
-                              <Button size="sm" variant="outline" disabled={!isTournamentMember(selectedTournament.id)}>
+                              <Button size="sm" variant="outline" disabled={!isTournamentAdmin(selectedTournament.id)}>
                                 Editar torneio
                               </Button>
                             </span>
                           </TooltipTrigger>
-                          {!isTournamentMember(selectedTournament.id) && <TooltipContent>Somente membros podem editar.</TooltipContent>}
+                          {!isTournamentAdmin(selectedTournament.id) && <TooltipContent>Somente admins podem editar.</TooltipContent>}
                         </Tooltip>
 
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!isTournamentMember(selectedTournament.id)}
-                          onClick={() =>
-                            changeTournamentStatus(
-                              selectedTournament,
-                              selectedTournament.status === "INSCRICOES_ABERTAS" ? "INSCRICOES_ENCERRADAS" : "INSCRICOES_ABERTAS"
-                            )
-                          }
-                        >
-                          {selectedTournament.status === "INSCRICOES_ABERTAS" ? "Fechar inscrições" : "Abrir inscrições"}
-                        </Button>
+                        {(() => {
+                          const canToggle = ["DRAFT", "INSCRICOES_ABERTAS", "INSCRICOES_ENCERRADAS"].includes(selectedTournament.status);
+                          const isOpen = selectedTournament.status === "INSCRICOES_ABERTAS";
+                          return (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!isTournamentAdmin(selectedTournament.id) || !canToggle}
+                              onClick={() =>
+                                changeTournamentStatus(
+                                  selectedTournament,
+                                  isOpen ? "INSCRICOES_ENCERRADAS" : "INSCRICOES_ABERTAS"
+                                )
+                              }
+                            >
+                              {isOpen ? "Fechar inscrições" : "Abrir inscrições"}
+                            </Button>
+                          );
+                        })()}
 
                         <Button
                           size="sm"
                           variant="secondary"
-                          disabled={!isTournamentMember(selectedTournament.id) || generatingForTournament === selectedTournament.id}
+                          disabled={!isTournamentAdmin(selectedTournament.id) || generatingForTournament === selectedTournament.id}
                           onClick={() => createDrawAndFixtures(selectedTournament)}
                         >
-                          Gerar tabela
+                          {generatingForTournament === selectedTournament.id ? "Gerando..." : "Gerar tabela"}
                         </Button>
 
                         <Label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
@@ -1334,7 +1363,7 @@ const AdminTournament = () => {
                             disabled={!isTournamentMember(selectedTournament.id)}
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              if (!file || !isTournamentMember(selectedTournament.id)) return;
+                              if (!file || !isTournamentAdmin(selectedTournament.id)) return;
                               openImagePreview(file, "TOURNAMENT", selectedTournament.id);
                               e.currentTarget.value = "";
                             }}
@@ -1344,7 +1373,7 @@ const AdminTournament = () => {
                         <Button
                           size="sm"
                           variant="destructive"
-                          disabled={!isTournamentMember(selectedTournament.id)}
+                          disabled={!isTournamentAdmin(selectedTournament.id)}
                           onClick={() => changeTournamentStatus(selectedTournament, "FINALIZADO")}
                         >
                           Encerrar torneio
@@ -1444,23 +1473,32 @@ const AdminTournament = () => {
                             Status: {match.status} {result ? `• ${result.home_score} x ${result.away_score}` : ""}
                           </p>
                           <div className="mt-2 flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!isTournamentMember(selectedTournament.id)}
-                              onClick={() => openMatchEditor(selectedTournament, match)}
-                            >
-                              <PlayCircle className="mr-1 h-3.5 w-3.5" />
-                              Lançar resultado
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!isTournamentMember(selectedTournament.id) || isLocked}
-                              onClick={() => openMatchEditor(selectedTournament, match)}
-                            >
-                              Editar resultado
-                            </Button>
+                            {isLocked ? (
+                              <Button size="sm" variant="outline" disabled>
+                                <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                                Resultado validado
+                              </Button>
+                            ) : result ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={!isTournamentAdmin(selectedTournament.id)}
+                                onClick={() => openMatchEditor(selectedTournament, match)}
+                              >
+                                <Save className="mr-1 h-3.5 w-3.5" />
+                                Editar resultado
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={!isTournamentAdmin(selectedTournament.id)}
+                                onClick={() => openMatchEditor(selectedTournament, match)}
+                              >
+                                <PlayCircle className="mr-1 h-3.5 w-3.5" />
+                                Lançar resultado
+                              </Button>
+                            )}
                           </div>
                         </div>
                       );
