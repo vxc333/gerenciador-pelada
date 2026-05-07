@@ -85,20 +85,20 @@ export const PeladaCardComponent = memo(function PeladaCard({
       className={[
         "rounded-xl border p-5 transition-all duration-200 card-hover animate-slide-up",
         isNextUpcoming
-          ? "border-primary/60 bg-gradient-to-b from-background to-card glow-primary"
+          ? "border-primary/50 border-l-4 border-l-primary bg-gradient-to-br from-card via-card to-background/50 glow-primary"
           : "border-border bg-card",
       ].join(" ")}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             {isNextUpcoming && (
-              <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary-foreground">
-                próxima
+              <span className="shrink-0 rounded-sm bg-primary px-2.5 py-0.5 font-display text-sm tracking-widest text-primary-foreground">
+                PRÓXIMA
               </span>
             )}
             <h3
-              className={`truncate font-display text-lg leading-tight ${
+              className={`truncate font-display text-xl leading-none tracking-wide ${
                 isNextUpcoming ? "text-primary" : "text-foreground"
               }`}
             >

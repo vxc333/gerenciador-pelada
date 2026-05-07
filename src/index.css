@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,47 +6,47 @@
 
 @layer base {
   :root {
-    --background: 220 14% 11%;
-    --foreground: 220 18% 92%;
+    --background: 220 16% 10%;
+    --foreground: 220 18% 93%;
 
-    --card: 220 14% 14%;
-    --card-foreground: 220 20% 92%;
+    --card: 220 14% 13%;
+    --card-foreground: 220 20% 93%;
 
-    --popover: 220 14% 14%;
-    --popover-foreground: 220 20% 92%;
+    --popover: 220 14% 13%;
+    --popover-foreground: 220 20% 93%;
 
-    --primary: 24 96% 56%;
-    --primary-foreground: 25 100% 9%;
+    --primary: 28 98% 52%;
+    --primary-foreground: 25 100% 8%;
 
-    --secondary: 220 13% 19%;
+    --secondary: 220 13% 18%;
     --secondary-foreground: 220 18% 88%;
 
-    --muted: 220 13% 18%;
-    --muted-foreground: 220 10% 64%;
+    --muted: 220 13% 17%;
+    --muted-foreground: 220 10% 60%;
 
-    --accent: 220 13% 22%;
+    --accent: 220 13% 21%;
     --accent-foreground: 220 20% 92%;
 
-    --destructive: 0 70% 54%;
+    --destructive: 0 72% 52%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 10% 24%;
-    --input: 220 10% 24%;
-    --ring: 24 96% 56%;
+    --border: 220 10% 22%;
+    --input: 220 10% 22%;
+    --ring: 28 98% 52%;
 
     --radius: 0.625rem;
 
-    --sidebar-background: 220 15% 13%;
+    --sidebar-background: 220 15% 12%;
     --sidebar-foreground: 220 15% 87%;
-    --sidebar-primary: 24 96% 56%;
-    --sidebar-primary-foreground: 25 100% 9%;
-    --sidebar-accent: 220 13% 20%;
+    --sidebar-primary: 28 98% 52%;
+    --sidebar-primary-foreground: 25 100% 8%;
+    --sidebar-accent: 220 13% 19%;
     --sidebar-accent-foreground: 220 20% 91%;
-    --sidebar-border: 220 10% 23%;
-    --sidebar-ring: 24 96% 56%;
+    --sidebar-border: 220 10% 21%;
+    --sidebar-ring: 28 98% 52%;
 
-    --font-display: 'Inter', sans-serif;
-    --font-body: 'Inter', sans-serif;
+    --font-display: 'Bebas Neue', sans-serif;
+    --font-body: 'Nunito', sans-serif;
   }
 }
 
@@ -90,13 +90,20 @@
     font-family: var(--font-body);
     min-height: 100dvh;
     background-image:
-      radial-gradient(ellipse 80% 45% at 20% -30%, hsl(220 16% 24% / 0.45), transparent),
-      radial-gradient(ellipse 65% 40% at 95% 100%, hsl(220 20% 8% / 0.55), transparent);
+      repeating-linear-gradient(
+        -58deg,
+        transparent 0px,
+        transparent 72px,
+        hsl(220 14% 14% / 0.28) 72px,
+        hsl(220 14% 14% / 0.28) 73px
+      ),
+      radial-gradient(ellipse 80% 55% at 6% -12%, hsl(28 98% 52% / 0.11), transparent 68%),
+      radial-gradient(ellipse 60% 55% at 96% 108%, hsl(220 22% 7% / 0.70), transparent 70%);
   }
 
   h1, h2, h3 {
     font-family: var(--font-display);
-    letter-spacing: 0;
+    letter-spacing: 0.04em;
   }
 }
 

@@ -59,14 +59,18 @@ const Auth = () => {
     return (
         <CenteredPage className="relative overflow-hidden">
             <div className="pointer-events-none absolute inset-0">
-                <div className="absolute -top-24 left-1/2 h-56 w-56 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
-                <div className="absolute bottom-0 right-0 h-44 w-44 rounded-full bg-primary/10 blur-3xl" />
+                <div className="absolute -top-32 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/14 blur-3xl" />
+                <div className="absolute bottom-10 right-[-5%] h-56 w-56 rounded-full bg-primary/10 blur-3xl" />
+                <div className="absolute bottom-[-10%] left-[-5%] h-48 w-48 rounded-full bg-primary/6 blur-3xl" />
+                <div className="absolute left-1/2 top-1/2 h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/20 opacity-30" />
+                <div className="absolute left-1/2 top-1/2 h-[180px] w-[180px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/8" />
             </div>
 
             <div className="relative w-full max-w-sm animate-fade-in">
-                <div className="mb-6 text-center">
-                    <h1 className="font-display text-4xl tracking-wider text-primary">PELADA DO FURTO</h1>
-                    <p className="mt-2 text-sm text-muted-foreground">
+                <div className="mb-7 text-center">
+                    <h1 className="font-display text-5xl tracking-widest text-primary drop-shadow-[0_0_24px_hsl(28_98%_52%/0.3)]">PELADA DO FURTO</h1>
+                    <div className="mx-auto mt-2 h-px w-24 bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+                    <p className="mt-2.5 text-sm text-muted-foreground">
                         {isLogin ? "Entre para gerenciar suas peladas" : "Crie sua conta para administrar peladas"}
                     </p>
                 </div>

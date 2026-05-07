@@ -1273,9 +1273,9 @@ const Index = () => {
                 <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
                     {/* Desktop sidebar */}
                     <aside className="hidden lg:block">
-                        <div className="sticky top-20 rounded-xl border border-border/60 bg-card/50 p-2 backdrop-blur-sm">
-                            <p className="mb-1 px-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                                Menu
+                        <div className="sticky top-20 rounded-xl border border-border/50 bg-card/60 p-2 backdrop-blur-sm">
+                            <p className="mb-1.5 px-3 pt-1.5 font-display text-xs tracking-[0.2em] text-muted-foreground/50">
+                                MENU
                             </p>
                             <div className="space-y-0.5">
                                 {navItems
@@ -1287,14 +1287,14 @@ const Index = () => {
                                             <button
                                                 key={item.key}
                                                 className={[
-                                                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                                                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all duration-150",
                                                     active
-                                                        ? "bg-primary/15 text-primary"
-                                                        : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                                                        ? "border border-primary/20 bg-primary/12 text-primary"
+                                                        : "border border-transparent text-muted-foreground hover:bg-secondary hover:text-foreground",
                                                 ].join(" ")}
                                                 onClick={() => handleSectionChange(item.key)}
                                             >
-                                                <Icon className="h-4 w-4 shrink-0" />
+                                                <Icon className={`h-4 w-4 shrink-0 transition-transform duration-150 ${active ? "scale-110" : ""}`} />
                                                 {item.label}
                                             </button>
                                         );
@@ -1309,7 +1309,7 @@ const Index = () => {
                             <div className="mb-6 rounded-xl border border-border/60 bg-card p-4 sm:p-6 animate-fade-in">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
-                                        <h2 className="font-display text-2xl text-foreground">PAINEL</h2>
+                                        <h2 className="font-display text-3xl tracking-widest text-foreground">PAINEL</h2>
                                         <p className="text-sm text-muted-foreground">Gerencie seu perfil e crie novas peladas.</p>
                                     </div>
 
@@ -1548,7 +1548,7 @@ const Index = () => {
                         {activeSection === "historico" && !loadingStats && participationStats && (
                             <>
                                 <div className="mb-3 mt-8">
-                                    <h2 className="font-display text-xl text-foreground">HISTÓRICO DE PARTICIPAÇÃO</h2>
+                                    <h2 className="font-display text-2xl tracking-widest text-foreground">HISTÓRICO DE PARTICIPAÇÃO</h2>
                                 </div>
                                 <div className="mb-6 rounded-xl border border-border/60 bg-card p-4 sm:p-6 animate-slide-up">
                                     <div className="grid gap-3 sm:grid-cols-4">
@@ -1639,7 +1639,7 @@ const Index = () => {
                         {activeSection === "admin" && (
                             <>
                                 <div className="mb-3">
-                                    <h2 className="font-display text-xl text-foreground">MINHAS PELADAS (ADMIN)</h2>
+                                    <h2 className="font-display text-2xl tracking-widest text-foreground">MINHAS PELADAS (ADMIN)</h2>
                                 </div>
                                 {managedPeladas.length > 0 ? (
                                     <div className="space-y-3">
@@ -1656,7 +1656,7 @@ const Index = () => {
                         {activeSection === "membros" && (
                             <>
                                 <div className="mb-3">
-                                    <h2 className="font-display text-xl text-foreground">MEMBROS DE MINHAS PELADAS</h2>
+                                    <h2 className="font-display text-2xl tracking-widest text-foreground">MEMBROS DE MINHAS PELADAS</h2>
                                     <p className="text-sm text-muted-foreground">
                                         Visualize membros confirmados, solicitações pendentes e recusadas.
                                     </p>
@@ -1943,7 +1943,7 @@ const Index = () => {
                         {(activeSection === "disponiveis" || activeSection === "resumo") && (
                             <div>
                                 <div className="mb-3 mt-8">
-                                    <h2 className="font-display text-xl text-foreground">PELADAS DISPONIVEIS</h2>
+                                    <h2 className="font-display text-2xl tracking-widest text-foreground">PELADAS DISPONIVEIS</h2>
                                     <p className="text-sm text-muted-foreground">
                                         Solicite entrada para participar. Apenas admin pode aprovar.
                                     </p>
@@ -1971,7 +1971,7 @@ const Index = () => {
                         {activeSection === "resumo" && managedPeladas.length > 0 && (
                             <div>
                                 <div className="mb-3 mt-8">
-                                    <h2 className="font-display text-xl text-foreground">MINHAS PELADAS (ADMIN)</h2>
+                                    <h2 className="font-display text-2xl tracking-widest text-foreground">MINHAS PELADAS (ADMIN)</h2>
                                 </div>
                                 <div className="space-y-3">
                                     {managedPeladas.slice(0, 3).map((pelada) => renderCard(pelada, { showAdminActions: true }))}

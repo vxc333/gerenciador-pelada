@@ -24,11 +24,11 @@ export function SaaSNavbar({
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 border-b border-border/80 bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-background/85",
+        "sticky top-0 z-40 border-b border-border/60 bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-background/88",
         className,
       )}
     >
-      <div className="container mx-auto flex min-h-[68px] items-center gap-3 px-4 sm:px-6">
+      <div className="container mx-auto flex min-h-[64px] items-center gap-3 px-4 sm:px-6">
         {backTo ? (
           <Link to={backTo}>
             <SaaSButton variant="ghost" size="icon" aria-label="Voltar">
@@ -38,8 +38,8 @@ export function SaaSNavbar({
         ) : null}
 
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">{title}</h1>
-          {subtitle ? <p className="truncate text-xs text-muted-foreground">{subtitle}</p> : null}
+          <h1 className="truncate font-display text-2xl tracking-widest text-foreground sm:text-3xl">{title}</h1>
+          {subtitle ? <p className="-mt-1 truncate text-xs text-muted-foreground">{subtitle}</p> : null}
         </div>
 
         <div className="flex items-center gap-2">{actions}</div>
@@ -51,6 +51,7 @@ export function SaaSNavbar({
           </SaaSButton>
         ) : null}
       </div>
+      <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-primary/70 via-primary/25 to-transparent" />
     </header>
   );
 }
