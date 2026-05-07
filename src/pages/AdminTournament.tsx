@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -1313,71 +1312,66 @@ const AdminTournament = () => {
                         Tipo: {selectedTournament.tournament_type} • Vagas restantes: {Math.max((selectedTournament.max_teams || 9999) - selectedTeams.length, 0)}
                       </p>
                       <div className="flex flex-wrap gap-2 pt-1">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span>
-                              <Button size="sm" variant="outline" disabled={!isTournamentAdmin(selectedTournament.id)}>
-                                Editar torneio
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          {!isTournamentAdmin(selectedTournament.id) && <TooltipContent>Somente admins podem editar.</TooltipContent>}
-                        </Tooltip>
+                        {isTournamentAdmin(selectedTournament.id) && (
+                          <>
+                            <Button size="sm" variant="outline">
+                              Editar torneio
+                            </Button>
 
-                        {(() => {
-                          const canToggle = ["DRAFT", "INSCRICOES_ABERTAS", "INSCRICOES_ENCERRADAS"].includes(selectedTournament.status);
-                          const isOpen = selectedTournament.status === "INSCRICOES_ABERTAS";
-                          return (
+                            {(() => {
+                              const canToggle = ["DRAFT", "INSCRICOES_ABERTAS", "INSCRICOES_ENCERRADAS"].includes(selectedTournament.status);
+                              const isOpen = selectedTournament.status === "INSCRICOES_ABERTAS";
+                              return (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={!canToggle}
+                                  onClick={() =>
+                                    changeTournamentStatus(
+                                      selectedTournament,
+                                      isOpen ? "INSCRICOES_ENCERRADAS" : "INSCRICOES_ABERTAS"
+                                    )
+                                  }
+                                >
+                                  {isOpen ? "Fechar inscrições" : "Abrir inscrições"}
+                                </Button>
+                              );
+                            })()}
+
                             <Button
                               size="sm"
-                              variant="outline"
-                              disabled={!isTournamentAdmin(selectedTournament.id) || !canToggle}
-                              onClick={() =>
-                                changeTournamentStatus(
-                                  selectedTournament,
-                                  isOpen ? "INSCRICOES_ENCERRADAS" : "INSCRICOES_ABERTAS"
-                                )
-                              }
+                              variant="secondary"
+                              disabled={generatingForTournament === selectedTournament.id}
+                              onClick={() => createDrawAndFixtures(selectedTournament)}
                             >
-                              {isOpen ? "Fechar inscrições" : "Abrir inscrições"}
+                              {generatingForTournament === selectedTournament.id ? "Gerando..." : "Gerar tabela"}
                             </Button>
-                          );
-                        })()}
 
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={!isTournamentAdmin(selectedTournament.id) || generatingForTournament === selectedTournament.id}
-                          onClick={() => createDrawAndFixtures(selectedTournament)}
-                        >
-                          {generatingForTournament === selectedTournament.id ? "Gerando..." : "Gerar tabela"}
-                        </Button>
+                            <Label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                              <ImagePlus className="h-4 w-4" />
+                              Imagem
+                              <input
+                                className="hidden"
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  openImagePreview(file, "TOURNAMENT", selectedTournament.id);
+                                  e.currentTarget.value = "";
+                                }}
+                              />
+                            </Label>
 
-                        <Label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
-                          <ImagePlus className="h-4 w-4" />
-                          Imagem
-                          <input
-                            className="hidden"
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            disabled={!isTournamentMember(selectedTournament.id)}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file || !isTournamentAdmin(selectedTournament.id)) return;
-                              openImagePreview(file, "TOURNAMENT", selectedTournament.id);
-                              e.currentTarget.value = "";
-                            }}
-                          />
-                        </Label>
-
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={!isTournamentAdmin(selectedTournament.id)}
-                          onClick={() => changeTournamentStatus(selectedTournament, "FINALIZADO")}
-                        >
-                          Encerrar torneio
-                        </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => changeTournamentStatus(selectedTournament, "FINALIZADO")}
+                            >
+                              Encerrar torneio
+                            </Button>
+                          </>
+                        )}
 
                         <Button
                           size="sm"
@@ -1423,23 +1417,26 @@ const AdminTournament = () => {
                             )}
                           </div>
                           <div className="mt-2 flex gap-2">
-                            <Button size="sm" variant="outline" disabled={!isTransferWindowOpen(selectedTournament)}>Adicionar jogador</Button>
-                            <Button size="sm" variant="outline" disabled={!isTransferWindowOpen(selectedTournament)}>Substituir jogador</Button>
-                            <Label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-input px-2 py-1 text-xs">
-                              <Upload className="h-3.5 w-3.5" /> Escudo
-                              <input
-                                className="hidden"
-                                type="file"
-                                accept="image/png,image/jpeg,image/webp"
-                                disabled={!isTournamentMember(selectedTournament.id)}
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-                                  openImagePreview(file, "TEAM", selectedTournament.id, team.id);
-                                  e.currentTarget.value = "";
-                                }}
-                              />
-                            </Label>
+                            {isTournamentAdmin(selectedTournament.id) && (
+                              <>
+                                <Button size="sm" variant="outline" disabled={!isTransferWindowOpen(selectedTournament)}>Adicionar jogador</Button>
+                                <Button size="sm" variant="outline" disabled={!isTransferWindowOpen(selectedTournament)}>Substituir jogador</Button>
+                                <Label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-input px-2 py-1 text-xs">
+                                  <Upload className="h-3.5 w-3.5" /> Escudo
+                                  <input
+                                    className="hidden"
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/webp"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      openImagePreview(file, "TEAM", selectedTournament.id, team.id);
+                                      e.currentTarget.value = "";
+                                    }}
+                                  />
+                                </Label>
+                              </>
+                            )}
                           </div>
                         </div>
                       );
@@ -1478,27 +1475,27 @@ const AdminTournament = () => {
                                 <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
                                 Resultado validado
                               </Button>
-                            ) : result ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={!isTournamentAdmin(selectedTournament.id)}
-                                onClick={() => openMatchEditor(selectedTournament, match)}
-                              >
-                                <Save className="mr-1 h-3.5 w-3.5" />
-                                Editar resultado
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={!isTournamentAdmin(selectedTournament.id)}
-                                onClick={() => openMatchEditor(selectedTournament, match)}
-                              >
-                                <PlayCircle className="mr-1 h-3.5 w-3.5" />
-                                Lançar resultado
-                              </Button>
-                            )}
+                            ) : isTournamentAdmin(selectedTournament.id) ? (
+                              result ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openMatchEditor(selectedTournament, match)}
+                                >
+                                  <Save className="mr-1 h-3.5 w-3.5" />
+                                  Editar resultado
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openMatchEditor(selectedTournament, match)}
+                                >
+                                  <PlayCircle className="mr-1 h-3.5 w-3.5" />
+                                  Lançar resultado
+                                </Button>
+                              )
+                            ) : null}
                           </div>
                         </div>
                       );
