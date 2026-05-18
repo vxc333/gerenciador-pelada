@@ -667,62 +667,71 @@ const PublicPelada = () => {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("pelada_members")
-        .update(buildMemberMovePatch(entry.hostMember.is_goalkeeper))
-        .eq("id", entry.hostMember.id)
-        .eq("pelada_id", pelada.id)
-        .select("id, is_waiting")
-        .maybeSingle();
+      // Se o responsável já está no estado desejado (ex: já está ativo e queremos promover
+      // o convidado), mover o convidado diretamente em vez de tentar mover o responsável
+      // (que seria um no-op e deixaria o convidado preso na espera).
+      const hostAlreadyInTargetState = entry.hostMember.is_waiting === toWaiting;
 
-      setMovingEntryId(null);
+      if (!hostAlreadyInTargetState) {
+        const { data, error } = await supabase
+          .from("pelada_members")
+          .update(buildMemberMovePatch(entry.hostMember.is_goalkeeper))
+          .eq("id", entry.hostMember.id)
+          .eq("pelada_id", pelada.id)
+          .select("id, is_waiting")
+          .maybeSingle();
 
-      if (error) {
-        toast.error("Não foi possível mover o responsável do convidado");
-        return;
-      }
+        setMovingEntryId(null);
 
-      if (!data) {
-        toast.error("Movimentação não aplicada. Verifique suas permissões de admin nesta pelada.");
-        return;
-      }
-
-      if (data.is_waiting !== toWaiting) {
-        toast.error("Não foi possível persistir a movimentação do responsável");
-        fetchAll();
-        return;
-      }
-
-      await forceRebalance();
-
-      const { data: refreshedHost } = await supabase
-        .from("pelada_members")
-        .select("is_waiting")
-        .eq("id", entry.hostMember.id)
-        .eq("pelada_id", pelada.id)
-        .maybeSingle();
-
-      if (refreshedHost && refreshedHost.is_waiting !== toWaiting) {
-        if (!toWaiting && !hasRoleCapacity(entry.hostMember.is_goalkeeper)) {
-          toast.error(
-            entry.hostMember.is_goalkeeper
-              ? `Sem vaga de goleiro na lista principal (${pelada.max_goalkeepers} no limite).`
-              : `Sem vaga de linha na lista principal (${pelada.max_players} no limite).`,
-          );
-        } else {
-          toast.error("Movimentação não pôde ser mantida após recalcular a lista.");
+        if (error) {
+          toast.error("Não foi possível mover o responsável do convidado");
+          return;
         }
+
+        if (!data) {
+          toast.error("Movimentação não aplicada. Verifique suas permissões de admin nesta pelada.");
+          return;
+        }
+
+        if (data.is_waiting !== toWaiting) {
+          toast.error("Não foi possível persistir a movimentação do responsável");
+          fetchAll();
+          return;
+        }
+
+        await forceRebalance();
+
+        const { data: refreshedHost } = await supabase
+          .from("pelada_members")
+          .select("is_waiting")
+          .eq("id", entry.hostMember.id)
+          .eq("pelada_id", pelada.id)
+          .maybeSingle();
+
+        if (refreshedHost && refreshedHost.is_waiting !== toWaiting) {
+          if (!toWaiting && !hasRoleCapacity(entry.hostMember.is_goalkeeper)) {
+            toast.error(
+              entry.hostMember.is_goalkeeper
+                ? `Sem vaga de goleiro na lista principal (${pelada.max_goalkeepers} no limite).`
+                : `Sem vaga de linha na lista principal (${pelada.max_players} no limite).`,
+            );
+          } else {
+            toast.error("Movimentação não pôde ser mantida após recalcular a lista.");
+          }
+          fetchAll();
+          return;
+        }
+
+        toast.success(
+          toWaiting
+            ? "Responsável do convidado movido para a lista de espera"
+            : "Responsável do convidado movido para a lista principal",
+        );
         fetchAll();
         return;
       }
 
-      toast.success(
-        toWaiting
-          ? "Responsável do convidado movido para a lista de espera"
-          : "Responsável do convidado movido para a lista principal",
-      );
-      fetchAll();
-      return;
+      // Responsável já está no estado desejado: mover o convidado diretamente.
     }
 
     const { data, error } = await supabase
