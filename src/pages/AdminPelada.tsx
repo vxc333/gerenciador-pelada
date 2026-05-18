@@ -1019,28 +1019,52 @@ const AdminPelada = () => {
 
     setAddingSystemMemberUserId(profile.user_id);
 
-    const { error } = await supabase.from("pelada_members").upsert(
-      {
-        pelada_id: pelada.id,
-        user_id: profile.user_id,
-        member_name: profile.display_name,
-        member_avatar_url: profile.avatar_url,
-        is_goalkeeper: false,
-        admin_selected: true,
-      },
-      { onConflict: "pelada_id,user_id" }
-    );
-
-    setAddingSystemMemberUserId(null);
+    const { data: upsertedMember, error } = await supabase
+      .from("pelada_members")
+      .upsert(
+        {
+          pelada_id: pelada.id,
+          user_id: profile.user_id,
+          member_name: profile.display_name,
+          member_avatar_url: profile.avatar_url,
+          is_goalkeeper: false,
+          admin_selected: true,
+        },
+        { onConflict: "pelada_id,user_id" }
+      )
+      .select("id, is_waiting")
+      .maybeSingle();
 
     if (error) {
+      setAddingSystemMemberUserId(null);
       toast.error("Não foi possível adicionar o membro na pelada");
       return;
     }
 
-    toast.success("Membro adicionado na pelada");
+    // O upsert pode ter sido um UPDATE que não dispara o trigger de rebalanceamento
+    // (só dispara em mudanças de pelada_id, is_goalkeeper, priority_score ou created_at).
+    // Chamamos explicitamente para garantir que o membro entre na vaga disponível.
+    const { error: rebalanceError } = await supabase.rpc("rebalance_pelada_waitlist", { p_pelada_id: pelada.id });
+    if (rebalanceError) {
+      console.error("Erro ao recalcular lista de espera após adicionar membro:", rebalanceError);
+    }
+
+    setAddingSystemMemberUserId(null);
+
+    const { data: refreshedMember } = await supabase
+      .from("pelada_members")
+      .select("is_waiting")
+      .eq("id", upsertedMember?.id ?? "")
+      .maybeSingle();
+
     setSystemMemberSearch("");
     setSystemMemberResults([]);
+
+    if (refreshedMember?.is_waiting) {
+      toast.success("Membro adicionado na lista de espera (sem vaga no momento)");
+    } else {
+      toast.success("Membro adicionado na pelada");
+    }
     fetchAll();
   };
 
