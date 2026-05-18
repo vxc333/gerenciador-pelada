@@ -918,6 +918,11 @@ const AdminPelada = () => {
         (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") ||
         (user.email ? user.email.split("@")[0] : "Admin");
 
+      // Se a lista de jogadores (não goleiros) já está na capacidade máxima,
+      // o membro do admin é criado como "em espera" para não roubar a vaga do convidado.
+      const activeNonGkCount = orderedListEntries.filter((e) => !e.isWaiting && !e.isGoalkeeper).length;
+      const nonGkAtCapacity = activeNonGkCount >= (pelada.max_players || 0);
+
       const { data: insertedMember, error: insertMemberError } = await supabase
         .from("pelada_members")
         .insert({
@@ -925,6 +930,7 @@ const AdminPelada = () => {
           user_id: user.id,
           member_name: fallbackAdminName,
           is_goalkeeper: false,
+          is_waiting: nonGkAtCapacity,
         })
         .select("*")
         .single();
