@@ -734,11 +734,27 @@ const PublicPelada = () => {
       // Responsável já está no estado desejado: mover o convidado diretamente.
     }
 
+    // Usa a mesma lógica de timestamp do buildMemberMovePatch para garantir que
+    // o convidado fique na frente (earliestMs-1000) ou no fim (latestMs+1000) da fila.
+    const approvedGuestsNow = guests.filter((g) => g.approval_status === "approved");
+    const isGkGuest = (name: string) => /\(goleiro\)\s*$/i.test(name);
+    const guestRoleTimestamps = [
+      ...members.filter((m) => m.is_goalkeeper === entry.isGoalkeeper).map((m) => new Date(m.created_at).getTime()),
+      ...approvedGuestsNow
+        .filter((g) => isGkGuest(g.guest_name) === entry.isGoalkeeper)
+        .map((g) => new Date(g.created_at).getTime()),
+    ].filter(Number.isFinite);
+
+    const nowMs = Date.now();
+    const earliestMs = guestRoleTimestamps.length > 0 ? Math.min(...guestRoleTimestamps) : nowMs;
+    const latestMs = guestRoleTimestamps.length > 0 ? Math.max(...guestRoleTimestamps) : nowMs;
+    const guestShiftedMs = toWaiting ? latestMs + 1000 : earliestMs - 1000;
+
     const { data, error } = await supabase
       .from("pelada_member_guests")
       .update({
         is_waiting: toWaiting,
-        created_at: new Date(Date.now() + (toWaiting ? 1000 : -1000)).toISOString(),
+        created_at: new Date(guestShiftedMs).toISOString(),
       })
       .eq("id", entry.guest.id)
       .eq("pelada_id", pelada.id)
